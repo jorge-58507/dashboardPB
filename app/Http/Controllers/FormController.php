@@ -951,7 +951,7 @@ class FormController extends Controller
 
         return response()->json([
             'message' => $ans['message']
-        ], 200);
+        ], $ans['HTTPcode']);
     }
     public function showAuditorRecords()
     {

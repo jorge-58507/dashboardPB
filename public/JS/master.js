@@ -836,7 +836,7 @@ var initializeInventoryHkRecordsDeletion = function () {
 };
 
 
-var  initializeSalesForm = function () {
+var  initializeAuditorForm = function () {
     const form = document.getElementById('auditorForm');
     if (!form) return; // Si el formulario no está en el DOM, no hacer nada
 
@@ -897,7 +897,8 @@ var  initializeSalesForm = function () {
         }
     });
 }
-var initializeInventoryHkRecordsDeletion = function () {
+/*
+var initializeAuditorRecordsDeletion = function () {
     // El 'form-content-container' es donde se carga dinámicamente la tabla de registros.
     const recordsContainer = document.getElementById('form-content-container');
     if (!recordsContainer) {
@@ -979,7 +980,7 @@ var initializeInventoryHkRecordsDeletion = function () {
         }
     });
 };
-
+*/
 
 
 

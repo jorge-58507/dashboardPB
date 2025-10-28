@@ -174,7 +174,8 @@
                         } else if (formUrl === "{{ route('formulario.inventoryhk_partial') }}") { 
                             initializeInventoryHkForm();
                         } else if (formUrl === "{{ route('formulario.auditor_partial') }}") {
-                            initializeSalesRecordsDeletion();
+                            initializeAuditorForm();
+                            
                         } else if (formUrl === "{{ route('formulario.inventoryhk.records') }}") {
                             initializeInventoryHkRecordsDeletion();
                         }else if (formUrl === "{{ route('formulario.gasConsumption.records') }}") { 
