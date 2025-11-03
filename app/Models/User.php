@@ -41,4 +41,7 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
     ];
+
+    public function gasConsumptions()   {   return $this->hasMany(dpb_gasconsumption::class, 'gasconsumption_userid', 'id');    }
+    public function sales()             {   return $this->hasMany(dpb_sale::class, 'sale_userid', 'id');    }
 }

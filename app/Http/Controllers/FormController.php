@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
+use App\Models\dpb_gasconsumption;
 
 // Importaciones para Google Sheets API
 use Google\Client;
@@ -22,7 +23,10 @@ class FormController extends Controller
     /**
      * Muestra el formulario de ingreso de consumo de gas natural.
      */
-    public function fillTable($sheetName,$rowData,$requestedDate,$userId)
+
+    // GUARDAR EN LA BD Y LUEGO EN LA TABLA
+    protected $sheet = ['gasConsumption'=>'f','sale'=>'h'];
+    public function fillTable($sheetName,$rowData,$tableId)
     {
         $values = [$rowData]; // La API espera un array de arrays para las filas
         try {
@@ -31,33 +35,21 @@ class FormController extends Controller
             $client->addScope(Sheets::SPREADSHEETS);
             $service = new Sheets($client);
             $spreadsheetId = config('google.sheet_id');
-            // Hoja de destino en Google Sheets.
-            // Asegúrate de que esta hoja exista y se llame 'h'.
-            //$sheetName = 'h'; // <--- REEMPLAZA 'h' con el nombre real de tu hoja de Google Sheets
 
-            // Rango para leer: Asume que el user_id está en la columna A y la fechaRegistro en la columna C
-            // Ajusta este rango si tus columnas para user_id y fechaRegistro están en otro lugar.
-            $readRange = $sheetName . '!E:I'; 
+            // Ajusta este rango si las columnas para tableid están en otro lugar.
+            $readRange = $sheetName . '!X:Y'; 
             $response = $service->spreadsheets_values->get($spreadsheetId, $readRange);
             $existingRows = $response->getValues();
 
             if ($existingRows) {
-                // Ignora la fila de encabezados si existe (asume que la primera fila es de encabezados)
                 $dataRows = array_slice($existingRows, 1);
-
                 foreach ($dataRows as $row) {
-                    // !IMPORTANTE!: Ajusta los índices [0] y [2] según la posición REAL
-                    //              de user_id y fechaRegistro en tu Google Sheet.
-                    $existingUserId = $row[0] ?? null; // Columna A (índice 0)
-                    $existingDate = $row[4] ?? null;   // Columna C (índice 4)
-
-                    // Compara el user_id y la fecha (asegúrate de que los tipos de datos coincidan si es necesario)
-                    if ($existingUserId == $userId && $existingDate == $requestedDate) {
+                    $existingTableId = $row[23] ?? null; // Columna A (índice 0)
+                    if ($existingTableId == $tableId) {
                         Log::warning('Intento de registro duplicado detectado.', [
-                            'user_id' => $userId,
-                            'fecha' => $requestedDate,
+                            'table_id' => $existingTableId,
                         ]);
-                        return ['message'=>'Ya existe un registro para esta fecha y usuario. No se permite duplicar.', 'HTTPcode' =>409];
+                        return ['message'=>'Ya existe este registro. No se permite duplicar.', 'HTTPcode' =>409];
                     }
                 }
             }
@@ -87,7 +79,78 @@ class FormController extends Controller
             return ['message'=>'Error en el servidor al comunicarse con Google Sheets'.$e->getMessage(), 'HTTPcode' =>400];
         }
     }
+    
+    public function removeTable($sheetName,$tableId)
+    {
+        try {
+            $client = new Client();
+            $client->setAuthConfig(config('google.service_account_credentials_path'));
+            $client->addScope(Sheets::SPREADSHEETS);
+            $service = new Sheets($client);
+            $spreadsheetId = config('google.sheet_id');
 
+            $readRange = $sheetName . '!X:Y'; 
+            $response = $service->spreadsheets_values->get($spreadsheetId, $readRange);
+            $existingRows = $response->getValues();
+
+            if ($existingRows) {
+                $dataRows = array_slice($existingRows, 1); //quitar el encabezado
+                foreach ($dataRows as $index => $row) {
+                    $existingTableId = $row[0] ?? null; 
+                    if ($existingTableId == $tableId) {
+                        $rowNumber = $index+1; 
+                        break;
+                    }
+                }
+            }
+            if (empty($rowNumber)) {
+                return ['message' => 'El registro no existe en la tabla.', 'HTTPcode' => 200];
+            }
+            $targetSheetId = null;
+            $spreadsheet = $service->spreadsheets->get($spreadsheetId);
+            foreach ($spreadsheet->getSheets() as $sheet) {
+                if ($sheet->getProperties()->getTitle() === $sheetName) {
+                    $targetSheetId = $sheet->getProperties()->getSheetId();
+                    break;
+                }
+            }
+
+            if ($targetSheetId === null) {
+                throw new \Exception("La hoja '{$sheetName}' no fue encontrada en el Spreadsheet para eliminación.");
+            }
+
+            $deleteRequest = new DeleteDimensionRequest([
+                'range' => [
+                    'sheetId' => $targetSheetId,
+                    'dimension' => 'ROWS',
+                    'startIndex' => $rowNumber,
+                    'endIndex' => $rowNumber+1
+                ]
+            ]);
+
+            $batchUpdateRequest = new BatchUpdateSpreadsheetRequest([
+                'requests' => [
+                    new SheetRequest([ // Usar el nombre de clase completo
+                        'deleteDimension' => $deleteRequest
+                    ])
+                ]
+            ]);
+
+            $result = $service->spreadsheets->batchUpdate($spreadsheetId, $batchUpdateRequest);
+
+            if ($result->getReplies() && count($result->getReplies()) > 0) {
+                //Log::info('Fila eliminada con éxito de Ventas:', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'user_id' => Auth::id()]);
+                return ['message' => 'Registro de Ventas eliminado exitosamente.', 'HTTPcode' => 200];
+            } else {
+                //Log::error('Fallo al eliminar fila de Ventas, no se obtuvo respuesta exitosa.', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'result' => $result, 'user_id' => Auth::id()]);
+                return ['message' => 'Hubo un problema al eliminar el registro.', 'HTTPcode' => 200];
+            }
+            
+        } catch (\Exception $e) {
+            //Log::error('Error al eliminar registro de Ventas: ' . $e->getMessage(), ['exception' => $e, 'user_id' => Auth::id()]);
+            return ['message' => 'Error en el servidor al comunicarse con Google Sheets.', 'HTTPcode' => 500];
+        }
+    }
     /**
      * Procesa el envío del formulario de consumo de gas y lo envía a Google Sheets.
      */
@@ -109,7 +172,6 @@ class FormController extends Controller
             'date'          => 'required|date|before_or_equal:today',
         ];
 
-        // Usamos Validator::make() en lugar de $request->validate() para control manual de la respuesta JSON
         $validator = Validator::make($request->all(), $rules);
 
         if ($validator->fails()) {
@@ -120,540 +182,130 @@ class FormController extends Controller
                 'errors' => $validator->errors(),
             ], 422); // Código de estado 422 para errores de validación
         }
-
         $validatedData = $validator->validated(); // Obtener los datos validados
 
-        // 2. Preparar los datos para Google Sheets
-        // Asegúrate de que el orden de los elementos en este array
-        // coincida con el orden de las columnas en tu Google Sheet.
-        //Cala      f15/f1
-        //Lavanderia f5/f12
-        //Velero    f6/f19
-        //Agua      f8/f22
-        //Cocina    f21/f16
         $userId = Auth::id();
+
+        $qry_gasconsumption_date = dpb_gasconsumption::where('gasconsumption_date',$validatedData['date']);
+        $qry_gasconsumption_dateuser = dpb_gasconsumption::where('gasconsumption_date',$validatedData['date'])->where('gasconsumption_userid',$userId);
+        
+        if ($qry_gasconsumption_dateuser->count() > 0) {
+            return response()->json(['status' => 'fail', 'message' => 'Registro ya existe.',422]);
+        }
+        if ($qry_gasconsumption_date->count() > 0) {
+            return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, desea sobreescribirlo?.',422]);
+        }
+
+        $m_gasconsumption = new dpb_gasconsumption;
+        $m_gasconsumption->gasconsumption_date      = $validatedData['date'];
+        $m_gasconsumption->gasconsumption_userid    = $userId;
+        $m_gasconsumption->gasconsumption_cala      = $validatedData['cala'];
+        $m_gasconsumption->gasconsumption_laundry   = $validatedData['lavanderia'];
+        $m_gasconsumption->gasconsumption_velero    = $validatedData['velero'];
+        $m_gasconsumption->gasconsumption_kitchen   = $validatedData['cocina'];
+        $m_gasconsumption->gasconsumption_hotwater  = $validatedData['agua'];
+        $m_gasconsumption->gasconsumption_price     = $gas_price;
+        $m_gasconsumption->gasconsumption_status    = 1;
+        $m_gasconsumption->save();
+        
+        // 2. Preparar los datos para Google Sheets
         $min = 15;
         $max = 9999;
         $rowData = [
-            number_format($validatedData['cala']*$gas_price,2), //f1
-            $validatedData['date'],//f2
+            floatval($validatedData['cala']*$gas_price),
+            $validatedData['date'],
             mt_rand($min, $max),
             mt_rand($min, max: $max),
-            $validatedData['lavanderia'],//f5
-            $validatedData['velero'],//f6
+            $validatedData['lavanderia'],
+            $validatedData['velero'],
             mt_rand($min, $max),
-            $validatedData['agua'],//f8
+            $validatedData['agua'],
             mt_rand($min, $max),
-            Auth::id(),
+            $userId,
             mt_rand($min, $max),
-            number_format($validatedData['lavanderia']*$gas_price,2), //f12
-            mt_rand($min, $max),
-            mt_rand($min, $max),
-            $validatedData['cala'],//f15
-            number_format($validatedData['cocina']*$gas_price,2), //f16
+            floatval($validatedData['lavanderia']*$gas_price),
             mt_rand($min, $max),
             mt_rand($min, $max),
-            number_format($validatedData['velero']*$gas_price,2), //f19
+            $validatedData['cala'],
+            floatval($validatedData['cocina']*$gas_price),
             mt_rand($min, $max),
-            $validatedData['cocina'],//f21
-            number_format($validatedData['agua']*$gas_price,2), //f22
-            date('Y-m-d H:i:s'), // Opcional: Añadir una marca de tiempo
             mt_rand($min, $max),
+            floatval($validatedData['velero']*$gas_price),
+            mt_rand($min, $max),
+            $validatedData['cocina'],
+            floatval($validatedData['agua']*$gas_price),
+            now()->toDateTimeString(),
+            $m_gasconsumption->gasconsumption_id
         ];
-        
-        // Los datos para la API deben ser un array de arrays (cada array interno es una fila)
-        $values = [$rowData];
-        //return $values;
-        
-        // 3. Conectar a Google Sheets API
-        
-         try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS);
-            $service = new Sheets($client);
-            $spreadsheetId = config('google.sheet_id');
-            // El rango define dónde buscar la primera fila vacía para añadir los datos.
-            // 'f!A2' buscará a partir de la celda A2 en la pestaña 'f'.
-            $sheetName = 'f'; // <--- REEMPLAZA 'h' con el nombre real de tu hoja de Google Sheets
-
-            // --- INICIO DE LA VERIFICACIÓN DE DUPLICADOS ---
-            $requestedDate = $request->input('date'); // La fecha que el usuario intenta registrar
-
-            // Rango para leer: Asume que el user_id está en la columna A y la fechaRegistro en la columna C
-            // Ajusta este rango si tus columnas para user_id y fechaRegistro están en otro lugar.
-            $readRange = $sheetName . '!B:J';
-            $response = $service->spreadsheets_values->get($spreadsheetId, $readRange);
-            $existingRows = $response->getValues();
-
-            if ($existingRows) {
-                // Ignora la fila de encabezados si existe (asume que la primera fila es de encabezados)
-                $dataRows = array_slice($existingRows, 1);
-
-                foreach ($dataRows as $row) {
-                    // !IMPORTANTE!: Ajusta los índices [0] y [2] según la posición REAL
-                    //              de user_id y fechaRegistro en tu Google Sheet.
-                    $existingUserId = $row[8] ?? null;
-                    $existingDate = $row[0] ?? null;
-
-                    // Compara el user_id y la fecha (asegúrate de que los tipos de datos coincidan si es necesario)
-                    if ($existingUserId == $userId && $existingDate == $requestedDate) {
-                        Log::warning('Intento de registro duplicado de gas natural detectado.', [
-                            'user_id' => $userId,
-                            'fecha' => $requestedDate,
-                        ]);
-                        return response()->json([
-                            'message' => 'Ya existe un registro para esta fecha y usuario. No se permite duplicar.'
-                        ], 409); // 409 Conflict es un código HTTP apropiado para este error
-                    }
-                }
-            }
-            // --- FIN DE LA VERIFICACIÓN DE DUPLICADOS ---
-
-            $range = $sheetName . '!A2'; // Se añadirán datos a partir de la celda A2 en la hoja 'h'.
-
-            $body = new ValueRange([
-                'values' => $values
-            ]);
-
-            $params = [
-                'valueInputOption' => 'RAW'
-            ];
-
-            $result = $service->spreadsheets_values->append($spreadsheetId, $range, $body, $params);
-
-            // 5. Manejar Respuesta de la API y Devolver Éxito (Devolver JSON)
-            if ($result->getUpdates() && $result->getUpdates()->getUpdatedRows() > 0) {
-                // Datos añadidos con éxito
-                return response()->json(['message' => 'Información enviada correctamente'], 200); // Código 200 para éxito
-            } else {
-                // La API no reportó filas actualizadas (podría ser un problema o la hoja vacía)
-                Log::error('Failed to append row to Google Sheet, no rows updated', ['result' => $result]);
-                return response()->json(['message' => 'Hubo un problema al enviar la información.'], 500); // Código 500 para error interno
-            }
-
-        } catch (\Exception $e) {
-            // 6. Manejar Errores de Conexión o API (Devolver JSON)
-            Log::error('Error sending data: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Hubo un error en el servidor al comunicarse', 'error' => $e->getMessage()], 500); // Código 500 para error interno
-        }
-
+        $ans = $this->fillTable($this->sheet['gasConsumption'],$rowData,$request->input('date'),$userId);
+        return response()->json(['message' => $ans['message']], $ans['HTTPcode']);
     }
     public function showGasConsumptionRecords()
     {
-        $sheetName = 'f';
+        $sheetName = $this->sheet['gasConsumption'];
         $spreadsheetId = config('google.sheet_id');
-        $limitRows = 11; // Límite de filas a mostrar
+        $limitRows = 30; // Límite de filas a mostrar
 
         $currentUser = Auth::user();
         $currentUserId = $currentUser->id;
-        // ¡IMPORTANTE! Asegúrate de que tu modelo User tenga un método 'hasRole' o similar
-        // Si no usas Spatie/Laravel-Permission, necesitarás otra forma de verificar si es admin.
-        // Por ejemplo, si tienes una columna 'is_admin' en tu tabla de usuarios: $isAdmin = $currentUser->is_admin;
+
         $isAdmin = $currentUser->hasRole('Admin'); // Usando el método hasRole de Spatie/Laravel-Permission
 
         try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS_READONLY);
-            $service = new Sheets($client);
-
-            // Siempre lee el rango completo para poder filtrar correctamente si no es admin.
-            // Ajusta 'A:X' según la última columna de datos relevantes.
-            $fullRange = $sheetName . '!A:X';
-            $response = $service->spreadsheets_values->get($spreadsheetId, $fullRange);
-            $values = $response->getValues();
-
-            $displayHeaders = [];
-            $records = [];
-
-            $customHeadersMap = [
-                1 => 'Fecha',     // Columna B (Timestamp de creación del registro)
-                0 => '$.Cala',     // Columna A (ID del usuario que creó el registro)
-                11 => '$.Lavanderia ',  // Columna L
-                15 => '$.Cocina',    // Columna P
-                18 => '$.Velero',     // Columna S
-                21 => '$.Agua Caliente',// Columna V
-                4 => 'Lavanderia',   // Columna E
-                5 => 'Velero',     // Columna F
-                7 => 'Agua', // Columna H
-                9 => 'Usuario', // Columna J
-                14 => 'Cala',  // Columna O
-                20 => 'Cocina',// Columna U
-                22 => 'Creación',    // Columna W
+            $rs_gasConsumption = dpb_gasconsumption::ORDERBY('gasconsumption_status','DESC')->ORDERBY('gasconsumption_date','DESC')
+            ->JOIN('users','users.id','dpb_gasconsumptions.gasconsumption_userid')->LIMIT(30)->GET();
+            $displayHeaders = [
+             	'gasconsumption_date'       =>'Fecha',
+             	'name'                      =>'Usuario',
+             	'gasconsumption_cala'       =>'Cala',
+             	'gasconsumption_laundry'    =>'Lavanderia',
+             	'gasconsumption_kitchen'    =>'Cocina',
+            	'gasconsumption_velero'     =>'Velero',
+             	'gasconsumption_hotwater'   =>'Agua Caliente',
+             	'gasconsumption_price'      =>'Precio',
+             	'gasconsumption_status'     =>'Estado'
             ];
-            // Construye los encabezados a mostrar basándose en el mapeo
-            foreach ($customHeadersMap as $colIndex => $customName) {
-                $displayHeaders[$colIndex] = $customName;
-            }
-
-            if (!empty($values)) {
-                $headerRow = array_shift($values); // Remueve la primera fila (encabezados de la hoja)
-                $filteredRows = [];
-                $values = array_reverse($values);
-                // Iterar sobre las filas leídas (desde la fila 2 en adelante) para aplicar el filtro de usuario
-                foreach ($values as $index => $row) {
-                    // El ID de usuario está en la primera columna (índice 0)
-                    $rowUserId = $row[0] ?? null; // Obtener el ID de usuario de la fila
-
-                    // Si es administrador O el ID de usuario de la fila coincide con el usuario actual
-                    if ($isAdmin || (string) $rowUserId === (string) $currentUserId) {
-                        // Añadir el número de fila real de Google Sheets (importante para eliminación)
-                        // El +2 es porque los datos empiezan en la fila 2 (después de encabezado)
-                        // y el $values array es 0-indexado desde la primera fila de datos.
-                        $recordData = ['row_number_gs' => ($index + 2)];
-                        $recordData['data_cols'] = [];
-                        // Mapea los datos de la fila de Google Sheets a la estructura esperada por la vista
-                        foreach ($displayHeaders as $colIndex => $headerName) {
-                            $recordData['data_cols'][$colIndex] = $row[$colIndex] ?? '';
-                        }
-                        $filteredRows[] = $recordData;
-                    }
-                }
-
-                // Después de filtrar, aplicamos el límite de 11 filas (las más recientes)
-                // Si el usuario es administrador, verá las últimas 11 de *todos* los registros.
-                // Si no es administrador, verá las últimas 11 de *sus propios* registros.
-                $records = array_slice($filteredRows, -$limitRows);
-            }
-
-            return view('forms.gasConsumption_records', compact('displayHeaders', 'records'));
-
+            return view('forms.gasConsumption_records', compact('displayHeaders', 'rs_gasConsumption'));
         } catch (\Exception $e) {
-            Log::error('Error al cargar registros de Inventario HK: ' . $e->getMessage());
+            Log::error('Error al cargar registros: ' . $e->getMessage());
             return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
         }
     }
     public function deleteGasConsumption(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'row_number' => ['required', 'integer', 'min:2'],
+            'gasConsumption_id' => ['required', 'integer'],
         ], [
-            'row_number.required' => 'El número de fila es obligatorio para la eliminación.',
-            'row_number.integer' => 'El número de fila debe ser un número entero.',
-            'row_number.min' => 'No se puede eliminar la fila de encabezados.',
+            'gasConsumption_id.required' => 'El número de fila es obligatorio para la eliminación.',
+            'gasConsumption_id.integer' => 'El número de fila debe ser un número entero.',
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation Failed',
-                'errors' => $validator->errors()
-            ], 422);
+            return response()->json(['message' => 'Validation Failed','errors' => $validator->errors()], 422);
         }
 
-        $rowNumber = $request->input('row_number');
-        $sheetName = 'f'; // <--- ¡Confirma que 'gas' es el nombre correcto!
+        $gasConsumption_id = $request->input('gasConsumption_id');
 
-        try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS);
-            $service = new Sheets($client);
-            $spreadsheetId = config('google.sheet_id');
+        $rs_gasConsumption = dpb_gasconsumption::find($gasConsumption_id);
+        $rs_gasConsumption->gasConsumption_status = 0;
+        $rs_gasConsumption->save();
 
-            $targetSheetId = null;
-            $spreadsheet = $service->spreadsheets->get($spreadsheetId);
-            foreach ($spreadsheet->getSheets() as $sheet) {
-                if ($sheet->getProperties()->getTitle() === $sheetName) {
-                    $targetSheetId = $sheet->getProperties()->getSheetId();
-                    break;
-                }
-            }
-
-            if ($targetSheetId === null) {
-                throw new \Exception("La hoja '{$sheetName}' no fue encontrada en el Spreadsheet para eliminación.");
-            }
-
-            $deleteRequest = new DeleteDimensionRequest([
-                'range' => [
-                    'sheetId' => $targetSheetId,
-                    'dimension' => 'ROWS',
-                    'startIndex' => $rowNumber - 1,
-                    'endIndex' => $rowNumber
-                ]
-            ]);
-
-
-            $batchUpdateRequest = new BatchUpdateSpreadsheetRequest([
-                'requests' => [
-                    new SheetRequest([
-                        'deleteDimension' => $deleteRequest
-                    ])
-                ]
-            ]);
-
-            $result = $service->spreadsheets->batchUpdate($spreadsheetId, $batchUpdateRequest);
-
-            if ($result->getReplies() && count($result->getReplies()) > 0) {
-                Log::info('Fila eliminada con éxito de Consumo de Gas:', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'user_id' => Auth::id()]);
-                return response()->json(['message' => 'Registro de Consumo de Gas eliminado exitosamente.'], 200);
-            } else {
-                Log::error('Fallo al eliminar fila de Consumo de Gas, no se obtuvo respuesta exitosa.', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'result' => $result, 'user_id' => Auth::id()]);
-                return response()->json(['message' => 'Hubo un problema al eliminar el registro de Consumo de Gas.'], 500);
-            }
-
-        } catch (\Exception $e) {
-            Log::error('Error al eliminar registro de Consumo de Gas: ' . $e->getMessage(), ['exception' => $e, 'user_id' => Auth::id()]);
-            return response()->json(['message' => 'Error en el servidor al comunicarse con Google Sheets.', 'error' => $e->getMessage()], 500);
-        }
-    }
-
-    protected $laundryHeadersMap = [
-        16 => 'Creación',           
-        4 => 'Usuario',           
-        8 => 'Fecha Inicio',      
-        20 => 'Fecha Final',      
-        14 => 'Total Gasto',      
-        19 => 'Cantidad de Ciclos',
-    ];
-    public function showLaundryForm()
-    {
-        return view('forms.laundry_partial');
-    }
-    public function submitLaundry(Request $request) // <-- FUNCIÓN RENOMBRADA
-    {
-        // ACTUALIZACIÓN: Reglas de validación para fechaInicio y fechaFin
-        $validator = Validator::make($request->all(), [
-            'totalGasto'        => ['required', 'numeric', 'min:0'],
-            'cantidadCiclos'    => ['required', 'integer', 'min:0'],
-            'fechaInicio'       => ['required', 'date'], // NUEVA REGLA
-            'fechaFin'          => ['required', 'date', 'after_or_equal:fechaInicio', 'before_or_equal:today'],
-        ], [
-            'totalGasto.required' => 'El campo Gasto Total es obligatorio.',
-            'totalGasto.numeric' => 'El campo Gasto Total debe ser un número.',
-            'totalGasto.min' => 'El campo Gasto Total no puede ser negativo.',
-            'cantidadCiclos.required' => 'El campo Cantidad de Ciclos es obligatorio.',
-            'cantidadCiclos.integer' => 'El campo Cantidad de Ciclos debe ser un número entero.',
-            'cantidadCiclos.min' => 'El campo Cantidad de Ciclos no puede ser negativo.',
-            'fechaInicio.required' => 'El campo Fecha de Inicio es obligatorio.', // NUEVO MENSAJE
-            'fechaInicio.date' => 'El campo Fecha de Inicio debe ser una fecha válida.', // NUEVO MENSAJE
-            'fechaFin.required' => 'El campo Fecha de Fin es obligatorio.', // MENSAJE ACTUALIZADO
-            'fechaFin.date' => 'El campo Fecha de Fin debe ser una fecha válida.', // MENSAJE ACTUALIZADO
-            'fechaFin.after_or_equal' => 'La Fecha de Fin debe ser igual o posterior a la Fecha de Inicio.', // NUEVO MENSAJE
-            'fechaFin.before_or_equal' => 'La Fecha de Fin no puede ser mayor a la fecha actual.',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation Failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $min = 15;
-        $max = 9999;
-
-        // Asegúrate de ajustar los índices según la estructura de tu hoja 'g'
-        $rowData = [
-            mt_rand($min, $max), // Columna 1
-            mt_rand($min, $max), // Columna 2
-            mt_rand($min, $max), // Columna 3
-            mt_rand($min, $max), // Columna 4
-            Auth::id(),          // Columna 5 (user_id)
-            mt_rand($min, $max), // Columna 6
-            mt_rand($min, $max), // Columna 7
-            mt_rand($min, $max), // Columna 8
-            $request->input('fechaInicio'), // <-- NUEVO CAMPO: Fecha de Inicio (columna 9)
-            mt_rand($min, $max), // Columna 10
-            mt_rand($min, $max), // Columna 11
-            mt_rand($min, $max), // Columna 12
-            mt_rand($min, $max), // Columna 13
-            mt_rand($min, $max), // Columna 14
-            $request->input('totalGasto'), // Columna 15 (totalGasto)
-            mt_rand($min, $max), // Columna 16
-            date('Y-m-d H:i:s'), // Columna 17 (Timestamp)
-            mt_rand($min, $max), // Columna 18
-            mt_rand($min, $max), // Columna 19
-            $request->input('cantidadCiclos'), // Columna 20 (cantidadCiclos)
-            $request->input('fechaFin'), // <-- NUEVO CAMPO: Fecha de Fin (columna 21)
-            mt_rand($min, $max), // Columna 22
-            mt_rand($min, $max), // Columna 23
-            mt_rand($min, $max), // Columna 24
-        ];
-
-        $values = [$rowData];
-        
-        try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS);
-
-            $service = new Sheets($client);
-
-            $spreadsheetId = config('google.sheet_id');
-            // El rango define dónde buscar la primera fila vacía para añadir los datos.
-            // 'f!A2' buscará a partir de la celda A2 en la pestaña 'f'.
-            $range = 'g!A2'; // Asegúrate que 'f' es el nombre correcto de la pestaña
-
-            $body = new ValueRange([
-                'values' => $values
-            ]);
-
-            $params = [
-                'valueInputOption' => 'RAW'
-            ];
-
-            $result = $service->spreadsheets_values->append($spreadsheetId, $range, $body, $params);
-
-            // 5. Manejar Respuesta de la API y Devolver Éxito (Devolver JSON)
-            if ($result->getUpdates() && $result->getUpdates()->getUpdatedRows() > 0) {
-                // Datos añadidos con éxito
-                return response()->json(['message' => 'Información enviada correctamente'], 200); // Código 200 para éxito
-            } else {
-                // La API no reportó filas actualizadas (podría ser un problema o la hoja vacía)
-                Log::error('Failed to append row to Google Sheet, no rows updated', ['result' => $result]);
-                return response()->json(['message' => 'Hubo un problema al enviar la información.'], 500); // Código 500 para error interno
-            }
-
-        } catch (\Exception $e) {
-            // 6. Manejar Errores de Conexión o API (Devolver JSON)
-            Log::error('Error sending data: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Hubo un error en el servidor al comunicarse', 'error' => $e->getMessage()], 500); // Código 500 para error interno
-        }
-
-    }
-    public function showLaundryRecords()
-    {
-        // ¡IMPORTANTE! Confirma que 'laundry' es el nombre exacto de tu hoja de Lavandería
-        $sheetName = 'G';
-        $spreadsheetId = config('google.sheet_id');
-        $limitRows = 11;
-
-        $currentUser = Auth::user();
-        $currentUserId = $currentUser->id;
-        $isAdmin = $currentUser->hasRole('Admin'); // O tu método para verificar admin
-
-        try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS_READONLY);
-            $service = new Sheets($client);
-
-            // Ajusta 'A:M' si tus datos de lavandería ocupan más o menos columnas.
-            // La 'M' corresponde al índice 12 (Bolsa #10).
-            $fullRange = $sheetName . '!A:X';
-            $response = $service->spreadsheets_values->get($spreadsheetId, $fullRange);
-            $values = $response->getValues();
-
-            $displayHeaders = [];
-            $records = [];
-
-            // Usa el mapeo de encabezados específico para lavandería
-            $customHeadersMap = $this->laundryHeadersMap;
-
-            foreach ($customHeadersMap as $colIndex => $customName) {
-                $displayHeaders[$colIndex] = $customName;
-            }
-
-            if (!empty($values)) {
-                array_shift($values); // Remueve la fila de encabezados
-                $filteredRows = [];
-                $values = array_reverse($values);
-
-                foreach ($values as $index => $row) {
-                    $rowUserId = $row[0] ?? null; // Asume user_id está en la primera columna (índice 0)
-
-                    if ($isAdmin || (string) $rowUserId === (string) $currentUserId) {
-                        $recordData = ['row_number_gs' => ($index + 2)];
-                        $recordData['data_cols'] = [];
-                        foreach ($displayHeaders as $colIndex => $headerName) {
-                            $recordData['data_cols'][$colIndex] = $row[$colIndex] ?? '';
-                        }
-                        $filteredRows[] = $recordData;
-                    }
-                }
-
-                $records = array_slice($filteredRows, -$limitRows);
-            }
-
-            return view('forms.laundry_records', compact('displayHeaders', 'records'));
-
-        } catch (\Exception $e) {
-            Log::error('Error al cargar registros de Lavandería: ' . $e->getMessage());
-            return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
-        }
-    }
-    public function deleteLaundry(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'row_number' => ['required', 'integer', 'min:2'],
-        ], [
-            'row_number.required' => 'El número de fila es obligatorio para la eliminación.',
-            'row_number.integer' => 'El número de fila debe ser un número entero.',
-            'row_number.min' => 'No se puede eliminar la fila de encabezados.',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation Failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $rowNumber = $request->input('row_number');
-        $sheetName = 'g';
-
-        try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS);
-            $service = new Sheets($client);
-            $spreadsheetId = config('google.sheet_id');
-
-            $targetSheetId = null;
-            $spreadsheet = $service->spreadsheets->get($spreadsheetId);
-            foreach ($spreadsheet->getSheets() as $sheet) {
-                if ($sheet->getProperties()->getTitle() === $sheetName) {
-                    $targetSheetId = $sheet->getProperties()->getSheetId();
-                    break;
-                }
-            }
-
-            if ($targetSheetId === null) {
-                throw new \Exception("La hoja '{$sheetName}' no fue encontrada en el Spreadsheet para eliminación.");
-            }
-
-            $deleteRequest = new DeleteDimensionRequest([
-                'range' => [
-                    'sheetId' => $targetSheetId,
-                    'dimension' => 'ROWS',
-                    'startIndex' => $rowNumber - 1,
-                    'endIndex' => $rowNumber
-                ]
-            ]);
-
-            $batchUpdateRequest = new BatchUpdateSpreadsheetRequest([
-                'requests' => [
-                    new SheetRequest([ // Usar el nombre de clase completo
-                        'deleteDimension' => $deleteRequest
-                    ])
-                ]
-            ]);
-
-            $result = $service->spreadsheets->batchUpdate($spreadsheetId, $batchUpdateRequest);
-
-            if ($result->getReplies() && count($result->getReplies()) > 0) {
-                Log::info('Fila eliminada con éxito de Lavandería:', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'user_id' => Auth::id()]);
-                return response()->json(['message' => 'Registro de Lavandería eliminado exitosamente.'], 200);
-            } else {
-                Log::error('Fallo al eliminar fila de Lavandería, no se obtuvo respuesta exitosa.', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'result' => $result, 'user_id' => Auth::id()]);
-                return response()->json(['message' => 'Hubo un problema al eliminar el registro de Lavandería.'], 500);
-            }
-
-        } catch (\Exception $e) {
-            Log::error('Error al eliminar registro de Lavandería: ' . $e->getMessage(), ['exception' => $e, 'user_id' => Auth::id()]);
-            return response()->json(['message' => 'Error en el servidor al comunicarse con Google Sheets.', 'error' => $e->getMessage()], 500);
-        }
+        $result = $this->removeTable($this->sheet['gasConsumption'],$gasConsumption_id);
+        return response()->json(['message' => $result['message']], $result['HTTPcode']);
     }
 
 
     protected $salesHeadersMap = [
         16 => 'Creación',          
-        8 => 'Fecha',         
-        4 => 'Usuario',       
-        14 => '$ Total',     
-        20 => '$ OtrosIngresos',
-        18 => 'Clientes',       
+        23 => 'Fecha',         
+        6 => 'Usuario',       
+        1 => 'Corporativo',     
+        3 => 'Ag. Nacional',
+        12 => 'Ag. Internacional',       
+        8 => 'Callcenter',       
+        10 => 'OTAs',       
+        13 => 'Arenas',       
+        19 => 'Pag. Web',       
     ];
     public function showSalesForm()
     {
@@ -700,6 +352,7 @@ class FormController extends Controller
 
         if ($validator->fails()) {
             return response()->json([
+                'status' => 'fail',
                 'message' => 'Validation Failed',
                 'errors' => $validator->errors()
             ], 422);
@@ -709,10 +362,8 @@ class FormController extends Controller
         $max = 9999;
         $userId = Auth::id(); // ID del usuario autenticado
 
-        // Construcción de la fila de datos con 24 columnas
-        // ¡IMPORTANTE! Ajusta los índices (0-23) para que tus datos reales
-        // (user_id, montoTotalHospedaje, cantidadClienteHospedado, totalVentaOtroIngreso, fechaRegistro)
-        // caigan en las columnas correctas en tu hoja 'h'.
+        
+
 
         $rowData = [
             mt_rand($min, $max), // Columna 1 (índice 0)
@@ -741,17 +392,13 @@ class FormController extends Controller
             $request->input('fechaRegistro'),     // Columna 24 (índice 23) - fechaRegistro
         ];
         $ans = $this->fillTable('h',$rowData,$request->input('fechaRegistro'),$userId);
-
-        return response()->json([
-            'message' => $ans['message']
-        ], $ans['HTTPcode']);
+        return response()->json(['message' => $ans['message']], $ans['HTTPcode']);
     }
     public function showSalesRecords()
     {
-        // ¡IMPORTANTE! Confirma que 'Sales' es el nombre exacto de tu hoja de Ventas
         $sheetName = 'h';
         $spreadsheetId = config('google.sheet_id');
-        $limitRows = 11;
+        $limitRows = 30;
 
         $currentUser = Auth::user();
         $currentUserId = $currentUser->id;
@@ -769,8 +416,6 @@ class FormController extends Controller
 
             $displayHeaders = [];
             $records = [];
-
-            // Usa el mapeo de encabezados específico para ventas
             $customHeadersMap = $this->salesHeadersMap;
 
             foreach ($customHeadersMap as $colIndex => $customName) {
@@ -780,10 +425,8 @@ class FormController extends Controller
             if (!empty($values)) {
                 array_shift($values); // Remueve la fila de encabezados
                 $filteredRows = [];
-                $values = array_reverse($values);
-
                 foreach ($values as $index => $row) {
-                    $rowUserId = $row[0] ?? null; // Asume user_id está en la primera columna (índice 0)
+                    $rowUserId = $row[6] ?? null;
 
                     if ($isAdmin || (string) $rowUserId === (string) $currentUserId) {
                         $recordData = ['row_number_gs' => ($index + 2)];
@@ -794,7 +437,7 @@ class FormController extends Controller
                         $filteredRows[] = $recordData;
                     }
                 }
-
+                $filteredRows = array_reverse($filteredRows);
                 $records = array_slice($filteredRows, -$limitRows);
             }
 
@@ -823,69 +466,209 @@ class FormController extends Controller
         }
 
         $rowNumber = $request->input('row_number');
-        $sheetName = 'h';
-
-        try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS);
-            $service = new Sheets($client);
-            $spreadsheetId = config('google.sheet_id');
-
-            $targetSheetId = null;
-            $spreadsheet = $service->spreadsheets->get($spreadsheetId);
-            foreach ($spreadsheet->getSheets() as $sheet) {
-                if ($sheet->getProperties()->getTitle() === $sheetName) {
-                    $targetSheetId = $sheet->getProperties()->getSheetId();
-                    break;
-                }
-            }
-
-            if ($targetSheetId === null) {
-                throw new \Exception("La hoja '{$sheetName}' no fue encontrada en el Spreadsheet para eliminación.");
-            }
-
-            $deleteRequest = new DeleteDimensionRequest([
-                'range' => [
-                    'sheetId' => $targetSheetId,
-                    'dimension' => 'ROWS',
-                    'startIndex' => $rowNumber - 1,
-                    'endIndex' => $rowNumber
-                ]
-            ]);
-
-            $batchUpdateRequest = new BatchUpdateSpreadsheetRequest([
-                'requests' => [
-                    new SheetRequest([ // Usar el nombre de clase completo
-                        'deleteDimension' => $deleteRequest
-                    ])
-                ]
-            ]);
-
-            $result = $service->spreadsheets->batchUpdate($spreadsheetId, $batchUpdateRequest);
-
-            if ($result->getReplies() && count($result->getReplies()) > 0) {
-                Log::info('Fila eliminada con éxito de Ventas:', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'user_id' => Auth::id()]);
-                return response()->json(['message' => 'Registro de Ventas eliminado exitosamente.'], 200);
-            } else {
-                Log::error('Fallo al eliminar fila de Ventas, no se obtuvo respuesta exitosa.', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'result' => $result, 'user_id' => Auth::id()]);
-                return response()->json(['message' => 'Hubo un problema al eliminar el registro de Ventas.'], 500);
-            }
-
-        } catch (\Exception $e) {
-            Log::error('Error al eliminar registro de Ventas: ' . $e->getMessage(), ['exception' => $e, 'user_id' => Auth::id()]);
-            return response()->json(['message' => 'Error en el servidor al comunicarse con Google Sheets.', 'error' => $e->getMessage()], 500);
-        }
+        $result = $this->removeTable('h',$rowNumber);
+        return response()->json(['message' => $result['message']], $result['HTTPcode']);
     }
 
 
 
+    protected $laundryHeadersMap = [
+        16 => 'Creación',           
+        4 => 'Usuario',           
+        8 => 'Fecha Inicio',      
+        20 => 'Fecha Final',      
+        14 => 'Total Gasto',      
+        19 => 'Cantidad de Ciclos',
+    ];
+    public function showLaundryForm()
+    {
+        return view('forms.laundry_partial');
+    }
+    public function submitLaundry(Request $request) // <-- FUNCIÓN RENOMBRADA
+    {
+        // ACTUALIZACIÓN: Reglas de validación para fechaInicio y fechaFin
+        $validator = Validator::make($request->all(), [
+            'totalGasto'        => ['required', 'numeric', 'min:0'],
+            'cantidadCiclos'    => ['required', 'integer', 'min:0'],
+            'fechaInicio'       => ['required', 'date'], // NUEVA REGLA
+            'fechaFin'          => ['required', 'date', 'after_or_equal:fechaInicio', 'before_or_equal:today'],
+        ], [
+            'totalGasto.required' => 'El campo Gasto Total es obligatorio.',
+            'totalGasto.numeric' => 'El campo Gasto Total debe ser un número.',
+            'totalGasto.min' => 'El campo Gasto Total no puede ser negativo.',
+            'cantidadCiclos.required' => 'El campo Cantidad de Ciclos es obligatorio.',
+            'cantidadCiclos.integer' => 'El campo Cantidad de Ciclos debe ser un número entero.',
+            'cantidadCiclos.min' => 'El campo Cantidad de Ciclos no puede ser negativo.',
+            'fechaInicio.required' => 'El campo Fecha de Inicio es obligatorio.', // NUEVO MENSAJE
+            'fechaInicio.date' => 'El campo Fecha de Inicio debe ser una fecha válida.', // NUEVO MENSAJE
+            'fechaFin.required' => 'El campo Fecha de Fin es obligatorio.', // MENSAJE ACTUALIZADO
+            'fechaFin.date' => 'El campo Fecha de Fin debe ser una fecha válida.', // MENSAJE ACTUALIZADO
+            'fechaFin.after_or_equal' => 'La Fecha de Fin debe ser igual o posterior a la Fecha de Inicio.', // NUEVO MENSAJE
+            'fechaFin.before_or_equal' => 'La Fecha de Fin no puede ser mayor a la fecha actual.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation Failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $min = 15;
+        $max = 9999;
+
+        $rowData = [
+            mt_rand($min, $max), // Columna 1
+            mt_rand($min, $max), // Columna 2
+            mt_rand($min, $max), // Columna 3
+            mt_rand($min, $max), // Columna 4
+            Auth::id(),          // Columna 5 (user_id)
+            mt_rand($min, $max), // Columna 6
+            mt_rand($min, $max), // Columna 7
+            mt_rand($min, $max), // Columna 8
+            $request->input('fechaInicio'), // <-- NUEVO CAMPO: Fecha de Inicio (columna 9)
+            mt_rand($min, $max), // Columna 10
+            mt_rand($min, $max), // Columna 11
+            mt_rand($min, $max), // Columna 12
+            mt_rand($min, $max), // Columna 13
+            mt_rand($min, $max), // Columna 14
+            $request->input('totalGasto'), // Columna 15 (totalGasto)
+            mt_rand($min, $max), // Columna 16
+            date('Y-m-d H:i:s'), // Columna 17 (Timestamp)
+            mt_rand($min, $max), // Columna 18
+            mt_rand($min, $max), // Columna 19
+            $request->input('cantidadCiclos'), // Columna 20 (cantidadCiclos)
+            $request->input('fechaFin'), // <-- NUEVO CAMPO: Fecha de Fin (columna 21)
+            mt_rand($min, $max), // Columna 22
+            mt_rand($min, $max), // Columna 23
+            mt_rand($min, $max), // Columna 24
+        ];
+
+        $values = [$rowData];
+        
+        try {
+            $client = new Client();
+            $client->setAuthConfig(config('google.service_account_credentials_path'));
+            $client->addScope(Sheets::SPREADSHEETS);
+
+            $service = new Sheets($client);
+
+            $spreadsheetId = config('google.sheet_id');
+            $range = 'g!A2';
+
+            $body = new ValueRange([
+                'values' => $values
+            ]);
+
+            $params = [
+                'valueInputOption' => 'RAW'
+            ];
+
+            $result = $service->spreadsheets_values->append($spreadsheetId, $range, $body, $params);
+
+            if ($result->getUpdates() && $result->getUpdates()->getUpdatedRows() > 0) {
+                return response()->json(['message' => 'Información enviada correctamente'], 200); // Código 200 para éxito
+            } else {
+                Log::error('Failed to append row to Google Sheet, no rows updated', ['result' => $result]);
+                return response()->json(['message' => 'Hubo un problema al enviar la información.'], 500); // Código 500 para error interno
+            }
+
+        } catch (\Exception $e) {
+            // 6. Manejar Errores de Conexión o API (Devolver JSON)
+            Log::error('Error sending data: ' . $e->getMessage(), ['exception' => $e]);
+            return response()->json(['message' => 'Hubo un error en el servidor al comunicarse', 'error' => $e->getMessage()], 500); // Código 500 para error interno
+        }
+
+    }
+    public function showLaundryRecords()
+    {
+        // ¡IMPORTANTE! Confirma que 'laundry' es el nombre exacto de tu hoja de Lavandería
+        $sheetName = 'g';
+        $spreadsheetId = config('google.sheet_id');
+        $limitRows = 11;
+
+        $currentUser = Auth::user();
+        $currentUserId = $currentUser->id;
+        $isAdmin = $currentUser->hasRole('Admin'); // O tu método para verificar admin
+
+        try {
+            $client = new Client();
+            $client->setAuthConfig(config('google.service_account_credentials_path'));
+            $client->addScope(Sheets::SPREADSHEETS_READONLY);
+            $service = new Sheets($client);
+
+            $fullRange = $sheetName . '!A:X';
+            $response = $service->spreadsheets_values->get($spreadsheetId, $fullRange);
+            $values = $response->getValues();
+
+            $displayHeaders = [];
+            $records = [];
+
+            // Usa el mapeo de encabezados específico para lavandería
+            $customHeadersMap = $this->laundryHeadersMap;
+
+            foreach ($customHeadersMap as $colIndex => $customName) {
+                $displayHeaders[$colIndex] = $customName;
+            }
+
+            if (!empty($values)) {
+                array_shift($values); // Remueve la fila de encabezados
+                $filteredRows = [];
+                foreach ($values as $index => $row) {
+                    $rowUserId = $row[4] ?? null; // Asume user_id está en la primera columna (índice 0)
+
+                    if ($isAdmin || (string) $rowUserId === (string) $currentUserId) {
+                        $recordData = ['row_number_gs' => ($index + 2)];
+                        $recordData['data_cols'] = [];
+                        foreach ($displayHeaders as $colIndex => $headerName) {
+                            $recordData['data_cols'][$colIndex] = $row[$colIndex] ?? '';
+                        }
+                        $filteredRows[] = $recordData;
+                    }
+                }
+
+                $filteredRows = array_reverse($filteredRows);
+                $records = array_slice($filteredRows, -$limitRows);
+            }
+
+            return view('forms.laundry_records', compact('displayHeaders', 'records'));
+
+        } catch (\Exception $e) {
+            Log::error('Error al cargar registros de Lavandería: ' . $e->getMessage());
+            return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
+        }
+    }
+    public function deleteLaundry(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'row_number' => ['required', 'integer', 'min:2'],
+        ], [
+            'row_number.required' => 'El número de fila es obligatorio para la eliminación.',
+            'row_number.integer' => 'El número de fila debe ser un número entero.',
+            'row_number.min' => 'No se puede eliminar la fila de encabezados.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation Failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $rowNumber = $request->input('row_number');
+        $result = $this->removeTable('g',$rowNumber);
+        return response()->json([
+                'message' => $result['message'],
+            ], $result['HTTPcode']);
+    }
+
+
     protected $auditorHeadersMap = [
+        4 => 'Fecha',       
         0 => 'AB',          
         1 => 'Otro',         
         2 => 'Usuario',       
         3 => 'Creacion',     
-        4 => 'Fecha',       
     ];
     public function showAuditorForm()
     {
@@ -948,15 +731,11 @@ class FormController extends Controller
             $request->input('fechaRegistro'),     // Columna 24 (índice 23) - fechaRegistro
         ];
         $ans = $this->fillTable('l',$rowData,$request->input('fechaRegistro'),$userId);
-
-        return response()->json([
-            'message' => $ans['message']
-        ], $ans['HTTPcode']);
+        return response()->json(['message' => $ans['message']], $ans['HTTPcode']);
     }
     public function showAuditorRecords()
     {
-        // ¡IMPORTANTE! Confirma que 'Sales' es el nombre exacto de tu hoja de Ventas
-        $sheetName = 'h';
+        $sheetName = 'l';
         $spreadsheetId = config('google.sheet_id');
         $limitRows = 11;
 
@@ -978,7 +757,7 @@ class FormController extends Controller
             $records = [];
 
             // Usa el mapeo de encabezados específico para ventas
-            $customHeadersMap = $this->salesHeadersMap;
+            $customHeadersMap = $this->auditorHeadersMap;
 
             foreach ($customHeadersMap as $colIndex => $customName) {
                 $displayHeaders[$colIndex] = $customName;
@@ -987,8 +766,6 @@ class FormController extends Controller
             if (!empty($values)) {
                 array_shift($values); // Remueve la fila de encabezados
                 $filteredRows = [];
-                $values = array_reverse($values);
-
                 foreach ($values as $index => $row) {
                     $rowUserId = $row[0] ?? null; // Asume user_id está en la primera columna (índice 0)
 
@@ -1001,11 +778,11 @@ class FormController extends Controller
                         $filteredRows[] = $recordData;
                     }
                 }
-
+                $filteredRows = array_reverse($filteredRows);
                 $records = array_slice($filteredRows, -$limitRows);
             }
 
-            return view('forms.sales_records', compact('displayHeaders', 'records'));
+            return view('forms.auditor_records', compact('displayHeaders', 'records'));
 
         } catch (\Exception $e) {
             Log::error('Error al cargar registros de Ventas: ' . $e->getMessage());
@@ -1030,59 +807,8 @@ class FormController extends Controller
         }
 
         $rowNumber = $request->input('row_number');
-        $sheetName = 'h';
-
-        try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS);
-            $service = new Sheets($client);
-            $spreadsheetId = config('google.sheet_id');
-
-            $targetSheetId = null;
-            $spreadsheet = $service->spreadsheets->get($spreadsheetId);
-            foreach ($spreadsheet->getSheets() as $sheet) {
-                if ($sheet->getProperties()->getTitle() === $sheetName) {
-                    $targetSheetId = $sheet->getProperties()->getSheetId();
-                    break;
-                }
-            }
-
-            if ($targetSheetId === null) {
-                throw new \Exception("La hoja '{$sheetName}' no fue encontrada en el Spreadsheet para eliminación.");
-            }
-
-            $deleteRequest = new DeleteDimensionRequest([
-                'range' => [
-                    'sheetId' => $targetSheetId,
-                    'dimension' => 'ROWS',
-                    'startIndex' => $rowNumber - 1,
-                    'endIndex' => $rowNumber
-                ]
-            ]);
-
-            $batchUpdateRequest = new BatchUpdateSpreadsheetRequest([
-                'requests' => [
-                    new SheetRequest([ // Usar el nombre de clase completo
-                        'deleteDimension' => $deleteRequest
-                    ])
-                ]
-            ]);
-
-            $result = $service->spreadsheets->batchUpdate($spreadsheetId, $batchUpdateRequest);
-
-            if ($result->getReplies() && count($result->getReplies()) > 0) {
-                Log::info('Fila eliminada con éxito de Ventas:', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'user_id' => Auth::id()]);
-                return response()->json(['message' => 'Registro de Ventas eliminado exitosamente.'], 200);
-            } else {
-                Log::error('Fallo al eliminar fila de Ventas, no se obtuvo respuesta exitosa.', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'result' => $result, 'user_id' => Auth::id()]);
-                return response()->json(['message' => 'Hubo un problema al eliminar el registro de Ventas.'], 500);
-            }
-
-        } catch (\Exception $e) {
-            Log::error('Error al eliminar registro de Ventas: ' . $e->getMessage(), ['exception' => $e, 'user_id' => Auth::id()]);
-            return response()->json(['message' => 'Error en el servidor al comunicarse con Google Sheets.', 'error' => $e->getMessage()], 500);
-        }
+        $result = $this->removeTable('l',$rowNumber);
+        return response()->json(['message' => $result['message']], $result['HTTPcode']);
     }
 
 
@@ -1280,8 +1006,6 @@ class FormController extends Controller
             if (!empty($values)) {
                 array_shift($values); // Remueve la fila de encabezados
                 $filteredRows = [];
-                $values = array_reverse($values);
-
                 foreach ($values as $index => $row) {
                     $rowUserId = $row[0] ?? null; // Asume user_id está en la primera columna (índice 0)
 
@@ -1294,7 +1018,7 @@ class FormController extends Controller
                         $filteredRows[] = $recordData;
                     }
                 }
-
+                $filteredRows = array_reverse($filteredRows);
                 $records = array_slice($filteredRows, -$limitRows);
             }
 
@@ -1596,14 +1320,8 @@ class FormController extends Controller
             if (!empty($values)) {
                 $headerRow = array_shift($values); // Remueve la primera fila (encabezados de la hoja)
                 $filteredRows = [];
-
-                // Iterar sobre las filas leídas (desde la fila 2 en adelante) para aplicar el filtro de usuario
-                $values = array_reverse($values);
                 foreach ($values as $index => $row) {
-                    // El ID de usuario está en la primera columna (índice 0)
                     $rowUserId = $row[0] ?? null; // Obtener el ID de usuario de la fila
-
-                    // Si es administrador O el ID de usuario de la fila coincide con el usuario actual
                     if ($isAdmin || (string) $rowUserId === (string) $currentUserId) {
                         // Añadir el número de fila real de Google Sheets (importante para eliminación)
                         // El +2 es porque los datos empiezan en la fila 2 (después de encabezado)

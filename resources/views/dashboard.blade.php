@@ -8,17 +8,14 @@
                     <h2 class="text-xl font-semibold mb-4 text-dark-navy">Bienvenido, {{ Auth::user()->name }}!</h2>
                     <p class="mb-6 text-dark-navy">Selecciona una opción del menú:</p>
 
-                    {{-- NAVEGACIÓN DE FORMULARIOS --}}
                     <nav class="mb-8 flex flex-wrap gap-4 justify-center">
-                        {{-- Botón "Consumo de Gas" --}}
-                        @hasanyrole('Mantenimiento|Admin') {{-- Visible para Mantenimiento y Admin --}}
+                        @hasanyrole('Mantenimiento|Admin')
                             <button type="button" class="form-button bg-accent-blue hover:bg-dark-navy text-white font-bold py-2 px-4 rounded"
                                     data-form-url="{{ route('formulario.gas_consumption_partial') }}">
                                 Consumo de Gas
                             </button>
                         @endhasanyrole
-                        {{-- Botón "Ver Registros Gas" --}}
-                        @hasanyrole('Mantenimiento|Admin') {{-- Ajusta los roles según quién deba ver este listado --}}
+                        @hasanyrole('Mantenimiento|Admin')
                             <button type="button" class="form-button bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
                                     data-form-url="{{ route('formulario.gasConsumption.records') }}">
                                 Ver Registros Gas
@@ -114,6 +111,13 @@
                                 Ingresos
                             </button>
                         @endhasanyrole
+                        {{-- Botón "Ver Registros Auditor" --}}
+                        @hasanyrole('Auditor|Admin') {{-- Ajusta los roles según quién deba ver este listado --}}
+                            <button type="button" class="form-button bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
+                                    data-form-url="{{ route('formulario.auditor.records') }}">
+                                Ver Registros Ingresos
+                            </button>
+                        @endhasanyrole
                     </nav>
 
                     {{-- CONTENEDOR PARA CARGAR FORMULARIOS VÍA AJAX --}}
@@ -127,12 +131,13 @@
     <script>
         // Create a global object to hold our app-specific variables
         window.App = window.App || {}; // Ensures window.App exists
-        window.App.routes = {
-            inventoryhkDelete: "{{ route('formulario.inventoryhk.delete') }}",
-        };
+        // window.App.routes = {
+        //     inventoryhkDelete: "{{ route('formulario.inventoryhk.delete') }}",
+        // };
         window.App.csrfToken = "{{ csrf_token() }}";
     </script>
     <script src="/JS/master.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
     <script>
         document.addEventListener('DOMContentLoaded', function () {
@@ -143,7 +148,7 @@
 
             // Lógica de Manejo de Carga de Formularios
             formButtons.forEach(button => {
-                button.addEventListener('click', async function() {
+                button.addEventListener('click', async function() {                    
                     const formUrl = this.dataset.formUrl;
                     
                     formContainer.innerHTML = '<p class="text-center text-dark-navy">Cargando formulario...</p>';
@@ -186,6 +191,8 @@
                             initializePhoneCallRecordsDeletion();
                         } else if (formUrl === "{{ route('formulario.sales.records') }}") {
                             initializeSalesRecordsDeletion();
+                        } else if (formUrl === "{{ route('formulario.auditor.records') }}") {
+                            initializeAuditorRecordsDeletion();
                         }
                     } catch (error) {
                         console.error('Error loading form:', error);
@@ -198,6 +205,7 @@
                         // Usar toastIt directamente
                         toastIt('Error al cargar el formulario: ' + error.message);
                     }
+                    
                 });
             });
            

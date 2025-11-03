@@ -61,9 +61,4 @@
     <button type="submit" class="block mx-auto w-fit bg-accent-blue hover:bg-dark-navy text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
         Enviar Datos
     </button>
-    &nbsp;
-    <button type="button" class="block mx-auto w-fit bg-green-300 text-green-900 py-2 px-4 rounded-lg shadow-md hover:bg-green-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-75">
-        Ver Registros
-    </button>
-
 </form>

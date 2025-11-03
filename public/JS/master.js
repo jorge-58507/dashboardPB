@@ -115,71 +115,58 @@ var initializeGasConsumptionRecordsDeletion = function () {
         console.warn("Contenedor de registros no encontrado. No se puede inicializar la eliminación de gas.");
         return;
     }
-
-    // Puedes usar el mismo div de mensajes o crear uno nuevo si lo prefieres
-    const formMessages = document.getElementById('records-messages');
-
+    
     recordsContainer.addEventListener('click', async function(event) {
-        // AHORA BUSCAMOS LA CLASE ESPECÍFICA PARA GAS: 'delete-gas-record'
         if (event.target.classList.contains('delete-gas-record')) {
             const button = event.target;
-            const rowNumber = button.dataset.rowNumber;
+            const gasConsumption_id = button.dataset.rowNumber;
 
-            if (!confirm(`¿Estás seguro de que quieres eliminar el registro de gas de la fila ${rowNumber}? Esta acción es irreversible.`)) {
-                return;
-            }
+            const res = await Swal.fire({
+                title: '¿Estás seguro?',
+                text: 'No podrás revertir esta acción',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#3085d6',
+                cancelButtonColor: '#d33',
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar'
+            });
 
-            formMessages.innerHTML = '';
-            button.disabled = true;
-            button.textContent = 'Eliminando...';
+            if (res.isConfirmed) {
+                button.disabled = true;
+                button.textContent = 'Eliminando...';
 
-            try {
-                // *** USAMOS LA URL DIRECTA PARA LA RUTA DE ELIMINACIÓN DE GAS ***
-                const response = await fetch('/formulario/delete-gas-consumption', {
-                    method: 'DELETE',
-                    headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
-                        'Accept': 'application/json',
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ row_number: rowNumber })
-                });
+                try {
+                    const response = await fetch('/formulario/delete-gas-consumption', {
+                        method: 'DELETE',
+                        headers: {
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ gasConsumption_id })
+                    });
 
-                const result = await response.json();
+                    const result = await response.json();
 
-                if (response.ok) {
-                    toastIt(result.message, 'success');
-                    // Eliminar la fila visualmente, usando el ID específico de gas
-                    const rowElement = document.getElementById(`row-gas-${rowNumber}`);
-                    if (rowElement) {
-                        rowElement.remove();
+                    if (response.ok) {
+                        toastIt(result.message, 'success');
+
+                        const rowElement = document.getElementById(`row-gas-${gasConsumption_id}`);
+                        if (rowElement) {
+                            rowElement.remove();
+                        }
+                    } else {
+                        const errorMessage = result.message || 'Error al eliminar el registro de gas.';
+                        toastIt(errorMessage, 'error');
                     }
-                    formMessages.innerHTML = `
-                        <div class="success-message">
-                            ${result.message}
-                        </div>
-                    `;
-                } else {
-                    let errorMessage = result.message || 'Error al eliminar el registro de gas.';
-                    toastIt(errorMessage, 'error');
-                    formMessages.innerHTML = `
-                        <div class="error-message">
-                            <p class="font-bold">${errorMessage}</p>
-                        </div>
-                    `;
+                } catch (error) {
+                    console.error('Error al enviar la solicitud de eliminación:', error);
+                    toastIt('Error de conexión al eliminar gas: ' + error.message, 'error');
+                } finally {
+                    button.disabled = false;
+                    button.textContent = 'Eliminar';
                 }
-            } catch (error) {
-                console.error('Error al enviar la solicitud de eliminación de gas:', error);
-                toastIt('Error de conexión al eliminar gas: ' + error.message, 'error');
-                formMessages.innerHTML = `
-                    <div class="error-message">
-                        <p class="font-bold">Ocurrió un error al conectar con el servidor.</p>
-                        <p>${error.message}</p>
-                    </div>
-                `;
-            } finally {
-                button.disabled = false;
-                button.textContent = 'Eliminar';
             }
         }
     });
@@ -225,11 +212,13 @@ var initializeLaundryForm = function () {
             const result = await response.json();
 
             if (response.ok) {
+                /*
                 formMessages.innerHTML = `
                             <div class="success-message">
                                 ${result.message}
                             </div>
                         `;
+                        */
                 newForm.reset(); // Limpiar el formulario
                 toastIt(result.message, 'success');
             } else {
@@ -415,7 +404,6 @@ var initializeSalesRecordsDeletion = function () {
         console.warn("Contenedor de registros no encontrado. No se puede inicializar la eliminación de ventas.");
         return;
     }
-
     const formMessages = document.getElementById('records-messages');
 
     recordsContainer.addEventListener('click', async function(event) {
@@ -897,9 +885,7 @@ var  initializeAuditorForm = function () {
         }
     });
 }
-/*
 var initializeAuditorRecordsDeletion = function () {
-    // El 'form-content-container' es donde se carga dinámicamente la tabla de registros.
     const recordsContainer = document.getElementById('form-content-container');
     if (!recordsContainer) {
         console.warn("Contenedor de registros ('form-content-container') no encontrado. No se puede inicializar la eliminación.");
@@ -912,7 +898,7 @@ var initializeAuditorRecordsDeletion = function () {
     // después de que la página inicial ha cargado.
     recordsContainer.addEventListener('click', async function(event) {
         // Verificamos si el clic fue en un botón con la clase 'delete-hk-record'
-        if (event.target.classList.contains('delete-hk-record')) {
+        if (event.target.classList.contains('delete-auditor-record')) {
             const button = event.target;
             const rowNumber = button.dataset.rowNumber; // Obtenemos el número de fila de su atributo data
 
@@ -927,7 +913,7 @@ var initializeAuditorRecordsDeletion = function () {
 
             try {
                 // Enviamos la solicitud DELETE a la ruta de eliminación
-                const response = await fetch('/formulario/delete-inventoryhk', {
+                const response = await fetch('/formulario/delete-auditor', {
                 // const response = await fetch("{{ route('formulario.inventoryhk.delete') }}", {
                     method: 'DELETE',
                     headers: {
@@ -980,7 +966,7 @@ var initializeAuditorRecordsDeletion = function () {
         }
     });
 };
-*/
+
 
 
 
