@@ -19,7 +19,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach($rs_gasConsumption as $record)
+                    @foreach($rs_gasConsumption as $i => $record)
                         <tr id="row-gas-{{ $record['gasconsumption_id'] }}" class="{{ ($record['gasconsumption_status'] === 0) ? 'bg-gray-700 text-white' : '' }}">
                             {{-- <td class="py-2 px-4 border-b">{{ $record['row_number_gs'] }}</td> --}}
                             @foreach($displayHeaders as $colIndex => $headerName) {{-- Este bucle accederá a los datos por el índice original --}}
@@ -37,10 +37,12 @@
                                 {{-- <td class="py-2 px-4 border-b">{{ $record[$colIndex] ?? '' }}</td>                                     --}}
                             @endforeach
                             <td class="py-2 px-4 border-b">
-                                <button class="delete-gas-record bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded text-xs"
-                                        data-row-number="{{ $record['gasconsumption_id'] }}">
-                                    Eliminar
-                                </button>
+                                @if ($record['gasconsumption_status'] === 1)
+                                    <button class="delete-gas-record bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded text-xs"
+                                            data-row-number="{{ $record['gasconsumption_id'] }}">
+                                        Eliminar
+                                    </button>
+                                @endif
                             </td>
                         </tr>
                     @endforeach

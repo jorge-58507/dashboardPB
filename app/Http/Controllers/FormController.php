@@ -26,7 +26,7 @@ class FormController extends Controller
 
     // GUARDAR EN LA BD Y LUEGO EN LA TABLA
     protected $sheet = ['gasConsumption'=>'f','sale'=>'h'];
-    public function fillTable($sheetName,$rowData,$tableId)
+    public function fillTable($sheetName,$rowData,$databaseId)
     {
         $values = [$rowData]; // La API espera un array de arrays para las filas
         try {
@@ -45,7 +45,7 @@ class FormController extends Controller
                 $dataRows = array_slice($existingRows, 1);
                 foreach ($dataRows as $row) {
                     $existingTableId = $row[23] ?? null; // Columna A (índice 0)
-                    if ($existingTableId == $tableId) {
+                    if ($existingTableId == $databaseId) {
                         Log::warning('Intento de registro duplicado detectado.', [
                             'table_id' => $existingTableId,
                         ]);
@@ -55,7 +55,7 @@ class FormController extends Controller
             }
             // --- FIN DE LA VERIFICACIÓN DE DUPLICADOS ---
 
-            $range = $sheetName . '!A2'; // Se añadirán datos a partir de la celda A2 en la hoja 'h'.
+            $range = $sheetName . '!A2'; // Se añadirán datos a partir de la celda A2 en la hoja
 
             $body = new ValueRange([
                 'values' => $values
@@ -80,7 +80,7 @@ class FormController extends Controller
         }
     }
     
-    public function removeTable($sheetName,$tableId)
+    public function removeTable($sheetName,$databaseId)
     {
         try {
             $client = new Client();
@@ -97,7 +97,7 @@ class FormController extends Controller
                 $dataRows = array_slice($existingRows, 1); //quitar el encabezado
                 foreach ($dataRows as $index => $row) {
                     $existingTableId = $row[0] ?? null; 
-                    if ($existingTableId == $tableId) {
+                    if ($existingTableId == $databaseId) {
                         $rowNumber = $index+1; 
                         break;
                     }
@@ -135,25 +135,77 @@ class FormController extends Controller
                     ])
                 ]
             ]);
-
             $result = $service->spreadsheets->batchUpdate($spreadsheetId, $batchUpdateRequest);
-
             if ($result->getReplies() && count($result->getReplies()) > 0) {
-                //Log::info('Fila eliminada con éxito de Ventas:', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'user_id' => Auth::id()]);
-                return ['message' => 'Registro de Ventas eliminado exitosamente.', 'HTTPcode' => 200];
+                return ['message' => 'Registro eliminado exitosamente.', 'HTTPcode' => 200];
             } else {
-                //Log::error('Fallo al eliminar fila de Ventas, no se obtuvo respuesta exitosa.', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'result' => $result, 'user_id' => Auth::id()]);
                 return ['message' => 'Hubo un problema al eliminar el registro.', 'HTTPcode' => 200];
             }
-            
         } catch (\Exception $e) {
-            //Log::error('Error al eliminar registro de Ventas: ' . $e->getMessage(), ['exception' => $e, 'user_id' => Auth::id()]);
             return ['message' => 'Error en el servidor al comunicarse con Google Sheets.', 'HTTPcode' => 500];
         }
     }
-    /**
-     * Procesa el envío del formulario de consumo de gas y lo envía a Google Sheets.
-     */
+
+    public function updateTable($sheetName, $databaseId, $newRowData){
+        try {
+            $client = new Client();
+            $client->setAuthConfig(config('google.service_account_credentials_path'));
+            $client->addScope(Sheets::SPREADSHEETS);
+            $service = new Sheets($client);
+            $spreadsheetId = config('google.sheet_id');
+
+            $readRange = $sheetName . '!X:Y';
+            $response = $service->spreadsheets_values->get($spreadsheetId, $readRange);
+            $existingRows = $response->getValues();
+
+            if ($existingRows) {
+                $dataRows = array_slice($existingRows, 1); //quitar el encabezado
+                foreach ($dataRows as $index => $row) {
+                    $existingTableId = $row[0] ?? null; // Asumiendo que el ID de la BD está en la columna Y (índice 0 de la lectura X:Y)
+                    if ($existingTableId == $databaseId) {
+                        // El número de fila en la hoja es el índice del array + 2 (1 por el encabezado, 1 porque los índices son base 0)
+                        $rowNumber = $index + 2;
+                        break;
+                    }
+                }
+            }
+            if (empty($rowNumber)) {
+                return ['message' => 'El registro a actualizar no fue encontrado en la hoja de cálculo.', 'HTTPcode' => 404];
+            }
+
+            // 2. Construir el rango a actualizar. Ej: 'f!A5:X5'
+            $updateRange = $sheetName . '!A' . $rowNumber . ':X' . $rowNumber;
+
+            // 3. Preparar los datos para la actualización
+            $body = new ValueRange([
+                'values' => [$newRowData] // La API espera un array de filas
+            ]);
+
+            $params = [
+                // USER_ENTERED permite que Google Sheets interprete fechas y números correctamente.
+                'valueInputOption' => 'USER_ENTERED'
+            ];
+
+            // 4. Ejecutar la actualización
+            $result = $service->spreadsheets_values->update($spreadsheetId, $updateRange, $body, $params);
+
+            // 5. Verificar el resultado
+            if ($result->getUpdatedCells() > 0) {
+                return ['status' => 'success', 'message' => 'Registro actualizado exitosamente.', 'HTTPcode' => 200];
+            } else {
+                Log::error('Fallo al actualizar fila en Google Sheet, no se actualizaron celdas.', ['result' => $result]);
+                return ['status' => 'fail', 'message' => 'Hubo un problema al actualizar los datos en la hoja de cálculo.', 'HTTPcode' => 500];
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Error al actualizar datos en Google Sheet: ' . $e->getMessage(), ['exception' => $e]);
+            return ['status' => 'fail', 'message' => 'Error en el servidor al comunicarse con Google Sheets: ' . $e->getMessage(), 'HTTPcode' => 500];
+        }
+    }
+
+
+
+
     public function getGasConsumptionFormPartial()
     {
         // Devuelve la vista Blade sin un layout completo
@@ -190,10 +242,11 @@ class FormController extends Controller
         $qry_gasconsumption_dateuser = dpb_gasconsumption::where('gasconsumption_date',$validatedData['date'])->where('gasconsumption_userid',$userId);
         
         if ($qry_gasconsumption_dateuser->count() > 0) {
-            return response()->json(['status' => 'fail', 'message' => 'Registro ya existe.',422]);
+            return response()->json(['status' => 'fail', 'message' => 'Registro ya existe.'],422);
         }
         if ($qry_gasconsumption_date->count() > 0) {
-            return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, desea sobreescribirlo?.',422]);
+            $validatedData['databaseId'] = $qry_gasconsumption_date->first()->gasconsumption_id;
+            return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData],422);
         }
 
         $m_gasconsumption = new dpb_gasconsumption;
@@ -241,7 +294,7 @@ class FormController extends Controller
         return response()->json(['message' => $ans['message']], $ans['HTTPcode']);
     }
     public function showGasConsumptionRecords()
-    {
+    {   
         $sheetName = $this->sheet['gasConsumption'];
         $spreadsheetId = config('google.sheet_id');
         $limitRows = 30; // Límite de filas a mostrar
@@ -269,6 +322,79 @@ class FormController extends Controller
         } catch (\Exception $e) {
             Log::error('Error al cargar registros: ' . $e->getMessage());
             return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
+        }
+    }
+    public function updateGas(Request $request){
+        $gas_price = 0.45;
+        $userId = Auth::id();
+        $rules = [
+            'cala'              => 'required|numeric|max:999999999|min:0',
+            'lavanderia'        => 'required|numeric|max:999999999|min:0',
+            'cocina'            => 'required|numeric|max:999999999|min:0',
+            'velero'            => 'required|numeric|max:999999999|min:0',
+            'agua'              => 'required|numeric|max:999999999|min:0',
+            'date'              => 'required|date|before_or_equal:today',
+            'databaseId'        => 'required|integer'
+        ];
+        $validator = Validator::make($request->all(), $rules);
+
+        if ($validator->fails()) {
+            // Si la validación falla, devuelve un JSON con los errores
+            return response()->json([
+                'success' => false,
+                'message' => 'Falló la validación',
+                'errors' => $validator->errors(),
+            ], 422); // Código de estado 422 para errores de validación
+        }
+        $validatedData = $validator->validated(); // Obtener los datos validados
+
+        $m_gasconsumption = dpb_gasconsumption::find($validatedData['databaseId']);
+        $m_gasconsumption->gasconsumption_date      = $validatedData['date'];
+        $m_gasconsumption->gasconsumption_userid    = $userId;
+        $m_gasconsumption->gasconsumption_cala      = $validatedData['cala'];
+        $m_gasconsumption->gasconsumption_laundry   = $validatedData['lavanderia'];
+        $m_gasconsumption->gasconsumption_velero    = $validatedData['velero'];
+        $m_gasconsumption->gasconsumption_kitchen   = $validatedData['cocina'];
+        $m_gasconsumption->gasconsumption_hotwater  = $validatedData['agua'];
+        $m_gasconsumption->gasconsumption_price     = $gas_price;
+        $m_gasconsumption->gasconsumption_status    = 1;
+        $m_gasconsumption->save();
+
+        // Prepara la fila con los datos actualizados para Google Sheets
+        $min = 15;
+        $max = 9999;
+        $newRowData = [
+            floatval($validatedData['cala']*$gas_price),
+            $validatedData['date'],
+            mt_rand($min, $max),
+            mt_rand($min, max: $max),
+            $validatedData['lavanderia'],
+            $validatedData['velero'],
+            mt_rand($min, $max),
+            $validatedData['agua'],
+            mt_rand($min, $max),
+            $userId,
+            mt_rand($min, $max),
+            floatval($validatedData['lavanderia']*$gas_price),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            $validatedData['cala'],
+            floatval($validatedData['cocina']*$gas_price),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            floatval($validatedData['velero']*$gas_price),
+            mt_rand($min, $max),
+            $validatedData['cocina'],
+            floatval($validatedData['agua']*$gas_price),
+            now()->toDateTimeString(),
+            $m_gasconsumption->gasconsumption_id
+        ];
+
+        $ans = $this->updateTable($this->sheet['gasConsumption'], $validatedData['databaseId'], $newRowData);
+        if ($ans['status'] === 'success') {
+            return response()->json(['status' => 'success'  , 'message' => $ans['message']], $ans['HTTPcode']);
+        }else{
+            return response()->json(['status' => 'fail'     , 'message' => $ans['message']], $ans['HTTPcode']);
         }
     }
     public function deleteGasConsumption(Request $request)

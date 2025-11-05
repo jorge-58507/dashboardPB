@@ -40,6 +40,9 @@ Route::middleware('auth')->group(function () {
         Route::post('/submit-gas', [FormController::class, 'submitGasToSheet'])
             ->middleware(['role:Admin|Mantenimiento'])
             ->name('gas.submit'); // Nombre de ruta simplificado
+        Route::put('/submit-gas', [FormController::class, 'updateGas'])
+            ->middleware(['role:Admin|Mantenimiento']);
+            
         Route::get('/gas-consumption-records', [FormController::class, 'showGasConsumptionRecords'])
             ->middleware(['role:Admin|Mantenimiento'])
             ->name('gasConsumption.records');
