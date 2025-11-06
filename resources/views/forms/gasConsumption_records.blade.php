@@ -1,10 +1,7 @@
-{{-- resources/views/forms/gas_consumption_records.blade.php --}}
+{{-- resources/views/forms/gas_consumption_records.blade.php --}} 
 
 <div class="bg-white p-6 rounded-lg shadow-lg">
     <h2 class="text-2xl font-bold text-dark-navy mb-6">Registros de Consumo de Gas</h2>
-
-    <div id="records-messages" class="mt-4 mb-4"></div>
-
     @if(empty($rs_gasConsumption))
         <p class="text-gray-600">No hay registros de consumo de gas para mostrar.</p>
     @else
@@ -21,7 +18,6 @@
                 <tbody>
                     @foreach($rs_gasConsumption as $i => $record)
                         <tr id="row-gas-{{ $record['gasconsumption_id'] }}" class="{{ ($record['gasconsumption_status'] === 0) ? 'bg-gray-700 text-white' : '' }}">
-                            {{-- <td class="py-2 px-4 border-b">{{ $record['row_number_gs'] }}</td> --}}
                             @foreach($displayHeaders as $colIndex => $headerName) {{-- Este bucle accederá a los datos por el índice original --}}
                                 @switch($colIndex)
                                     @case('gasconsumption_date')
@@ -32,9 +28,7 @@
                                         @break                                        
                                     @default
                                         <td class="py-2 px-4 border-b">{{ $record[$colIndex] ?? '' }}</td>                                    
-                                        
                                 @endswitch    
-                                {{-- <td class="py-2 px-4 border-b">{{ $record[$colIndex] ?? '' }}</td>                                     --}}
                             @endforeach
                             <td class="py-2 px-4 border-b">
                                 @if ($record['gasconsumption_status'] === 1)

@@ -69,7 +69,6 @@ var initializeGasConsumptionForm = function () {
                 body: JSON.stringify(data),
             });
             const result = await response.json();
-
             if (result.status === "confirm") {
                 const res = await Swal.fire({
                     title: "Deseas actualizar el registro?",
@@ -83,6 +82,7 @@ var initializeGasConsumptionForm = function () {
                 });
 
                 if (res.isConfirmed) {
+                    const responseData = result.data;
                     try {
                         const response = await fetch(newForm.action, {
                             method: "PUT",
@@ -91,7 +91,7 @@ var initializeGasConsumptionForm = function () {
                                 Accept: "application/json",
                                 "X-CSRF-TOKEN": formCsrfToken,
                             },
-                            body: JSON.stringify(result.data),
+                            body: JSON.stringify(responseData),
                         });
                         const ans = await response.json();
                         if (ans.status === "success") {
@@ -195,6 +195,181 @@ var initializeGasConsumptionRecordsDeletion = function () {
         }
     });
 };
+
+var initializeSalesForm = function () {
+    const form = document.getElementById("salesForm");
+    if (!form) return; // Si el formulario no está en el DOM, no hacer nada
+    
+    const formCsrfToken = document.querySelector('input[name="_token"]').value; // El token está en el input oculto del formulario
+
+    // Limpiar listeners viejos si el formulario ya existía (útil si se carga varias veces)
+    const oldForm = form.cloneNode(true);
+    form.parentNode.replaceChild(oldForm, form);
+    const newForm = oldForm; // Ahora trabajamos con el nuevo elemento
+
+    // --- NUEVAS LLAMADAS PARA RESTRINGIR LA ENTRADA NUMÉRICA ---
+    enforceNumericInput("montoWeb", true); // Permitir decimales
+    enforceNumericInput("montoCallcenter", true); // Permitir decimales
+    enforceNumericInput("montoOTA", true); // Permitir decimales
+    enforceNumericInput("montoCorporativo", true); // Permitir decimales
+    enforceNumericInput("montoAgenciaNac", true); // Permitir decimales
+    enforceNumericInput("montoAgenciaInt", true); // Permitir decimales
+    enforceNumericInput("montoArenas", true); // Permitir decimales
+    // -------------------------------------------------------------
+
+    newForm.addEventListener("submit", async function (event) {
+        event.preventDefault(); // Evitar el envío por defecto
+        newForm
+            .querySelectorAll(".validation-error")
+            .forEach((el) => el.classList.add("hidden"));
+
+        const formData = new FormData(newForm);
+        const data = Object.fromEntries(formData.entries());
+        try {
+            const response = await fetch(newForm.action, {
+                method: "POST",
+                headers: {
+                    "X-CSRF-TOKEN": formCsrfToken,
+                    Accept: "application/json",
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(data),
+            });
+
+            const result = await response.json();
+            if (result.status === "confirm") {
+                const res = await Swal.fire({
+                    title: "Deseas actualizar el registro?",
+                    text: "No podrás revertir esta acción",
+                    icon: "warning",
+                    showCancelButton: true,
+                    confirmButtonColor: "#3085d6",
+                    cancelButtonColor: "#d33",
+                    confirmButtonText: "Sí, eliminar",
+                    cancelButtonText: "Cancelar",
+                });
+
+                if (res.isConfirmed) {
+                    const responseData = result.data;
+                    try {
+                        const response = await fetch(newForm.action, {
+                            method: "PUT",
+                            headers: {
+                                "Content-Type": "application/json",
+                                Accept: "application/json",
+                                "X-CSRF-TOKEN": formCsrfToken,
+                            },
+                            body: JSON.stringify(responseData),
+                        });
+                        const ans = await response.json();
+                        if (ans.status === "success") {
+                            newForm.reset();
+                            toastIt(ans.message, "success");
+                        } else {
+                            const errorMessage =
+                                ans.message ||
+                                "Error al actualizar el registro.";
+                            toastIt(errorMessage, "error");
+                        }
+                    } catch (error) {
+                        console.error("Error al enviar la solicitud de eliminación:",error);
+                        toastIt("Error de conexión al eliminar gas: " +error.message,"error");
+                    }
+                }
+            } else {
+                newForm.reset();
+                toastIt(result.message, "success");
+            }
+            if (response.ok) {
+                newForm.reset();
+                toastIt(result.message); // Usar toastIt directamente
+            } else {
+                let errorMessage =
+                    result.message || "Ocurrió un error inesperado.";
+
+                if (response.status === 422 && result.errors) {
+                    errorMessage =
+                        "Falló la validación. Por favor, revisa tus entradas.";
+                    for (const field in result.errors) {
+                        const errorElement = newForm.querySelector(
+                            `#error-${field}`
+                        );
+                        if (errorElement) {
+                            errorElement.textContent = result.errors[field][0];
+                            errorElement.classList.remove("hidden");
+                        }
+                    }
+                }
+                toastIt(errorMessage); // Usar toastIt directamente
+            }
+        } catch (error) {
+            console.error("Error:", error);
+            toastIt("Error de conexión: " + error.message); // Usar toastIt directamente
+        }
+    });
+};
+var initializeSalesRecordsDeletion = function () {
+    const recordsContainer = document.getElementById("form-content-container");
+    if (!recordsContainer) {
+        console.warn(
+            "Contenedor de registros no encontrado. No se puede inicializar la eliminación de ventas."
+        );
+        return;
+    }
+    recordsContainer.addEventListener("click", async function (event) {
+        if (event.target.classList.contains("delete-sales-record")) {
+            const button = event.target;
+            const sale_id = button.dataset.rowNumber;
+
+            const res = await Swal.fire({
+                title: "¿Estás seguro?",
+                text: "No podrás revertir esta acción",
+                icon: "warning",
+                showCancelButton: true,
+                confirmButtonColor: "#3085d6",
+                cancelButtonColor: "#d33",
+                confirmButtonText: "Sí, eliminar",
+                cancelButtonText: "Cancelar",
+            });
+            if (res.isConfirmed) {
+                button.disabled = true;
+                button.textContent = "Eliminando...";
+
+                try {
+                    const response = await fetch("/formulario/delete-sales", {
+                        method: "DELETE",
+                        headers: {
+                            "X-CSRF-TOKEN": document
+                                .querySelector('meta[name="csrf-token"]')
+                                .getAttribute("content"),
+                            Accept: "application/json",
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({ "sale_id" : sale_id }),
+                    });
+                    const result = await response.json();
+                    if (response.ok) {
+                        toastIt(result.message, "success");
+                        const rowElement = document.getElementById(`row-sales-${sale_id}`);
+                        console.log(rowElement);
+                        
+                        if (rowElement) {rowElement.remove();}
+                    } else {
+                        const errorMessage = result.message || "Error al eliminar el registro de ventas.";
+                        toastIt(errorMessage, "error");
+                    }
+                } catch (error) {
+                    console.error("Error al enviar la solicitud de eliminación:",error);
+                    toastIt("Error de conexión al eliminar ventas: " + error.message,"error");
+                } finally {
+                    button.disabled = false;
+                    button.textContent = "Eliminar";
+                }
+            }
+        }
+    });
+};
+
 
 var initializeLaundryForm = function () {
     const form = document.getElementById("laundryForm");
@@ -369,173 +544,8 @@ var initializeLaundryRecordsDeletion = function () {
     });
 };
 
-var initializeSalesForm = function () {
-    const form = document.getElementById("salesForm");
-    if (!form) return; // Si el formulario no está en el DOM, no hacer nada
-
-    const formMessages = document.getElementById("form-messages");
-    const formCsrfToken = document.querySelector('input[name="_token"]').value; // El token está en el input oculto del formulario
-
-    // Limpiar listeners viejos si el formulario ya existía (útil si se carga varias veces)
-    const oldForm = form.cloneNode(true);
-    form.parentNode.replaceChild(oldForm, form);
-    const newForm = oldForm; // Ahora trabajamos con el nuevo elemento
-
-    // --- NUEVAS LLAMADAS PARA RESTRINGIR LA ENTRADA NUMÉRICA ---
-    enforceNumericInput("montoWeb", true); // Permitir decimales
-    enforceNumericInput("montoCallcenter", true); // Permitir decimales
-    enforceNumericInput("montoOTA", true); // Permitir decimales
-    enforceNumericInput("montoCorporativo", true); // Permitir decimales
-    enforceNumericInput("montoAgenciaNac", true); // Permitir decimales
-    enforceNumericInput("montoAgenciaInt", true); // Permitir decimales
-    enforceNumericInput("montoArenas", true); // Permitir decimales
-    // -------------------------------------------------------------
-
-    newForm.addEventListener("submit", async function (event) {
-        event.preventDefault(); // Evitar el envío por defecto
-        formMessages.innerHTML = "";
-        newForm
-            .querySelectorAll(".validation-error")
-            .forEach((el) => el.classList.add("hidden"));
-
-        const formData = new FormData(newForm);
-        const data = Object.fromEntries(formData.entries());
-
-        try {
-            const response = await fetch(newForm.action, {
-                method: "POST",
-                headers: {
-                    "X-CSRF-TOKEN": formCsrfToken,
-                    Accept: "application/json",
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(data),
-            });
-
-            const result = await response.json();
-
-            if (response.ok) {
-                newForm.reset();
-                toastIt(result.message); // Usar toastIt directamente
-            } else {
-                let errorMessage =
-                    result.message || "Ocurrió un error inesperado.";
-
-                if (response.status === 422 && result.errors) {
-                    errorMessage =
-                        "Falló la validación. Por favor, revisa tus entradas.";
-                    for (const field in result.errors) {
-                        const errorElement = newForm.querySelector(
-                            `#error-${field}`
-                        );
-                        if (errorElement) {
-                            errorElement.textContent = result.errors[field][0];
-                            errorElement.classList.remove("hidden");
-                        }
-                    }
-                }
-                toastIt(errorMessage); // Usar toastIt directamente
-            }
-        } catch (error) {
-            console.error("Error:", error);
-            toastIt("Error de conexión: " + error.message); // Usar toastIt directamente
-        }
-    });
-};
-var initializeSalesRecordsDeletion = function () {
-    const recordsContainer = document.getElementById("form-content-container");
-    if (!recordsContainer) {
-        console.warn(
-            "Contenedor de registros no encontrado. No se puede inicializar la eliminación de ventas."
-        );
-        return;
-    }
-    const formMessages = document.getElementById("records-messages");
-
-    recordsContainer.addEventListener("click", async function (event) {
-        // Buscamos la clase específica para Ventas: 'delete-sales-record'
-        if (event.target.classList.contains("delete-sales-record")) {
-            const button = event.target;
-            const rowNumber = button.dataset.rowNumber;
-
-            if (
-                !confirm(
-                    `¿Estás seguro de que quieres eliminar el registro de ventas de la fila ${rowNumber}? Esta acción es irreversible.`
-                )
-            ) {
-                return;
-            }
-
-            formMessages.innerHTML = "";
-            button.disabled = true;
-            button.textContent = "Eliminando...";
-
-            try {
-                // Usamos la URL directa para la ruta de eliminación de ventas
-                const response = await fetch("/formulario/delete-sales", {
-                    method: "DELETE",
-                    headers: {
-                        "X-CSRF-TOKEN": document
-                            .querySelector('meta[name="csrf-token"]')
-                            .getAttribute("content"),
-                        Accept: "application/json",
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ row_number: rowNumber }),
-                });
-
-                const result = await response.json();
-
-                if (response.ok) {
-                    toastIt(result.message, "success");
-                    // Eliminar la fila visualmente, usando el ID específico de ventas
-                    const rowElement = document.getElementById(
-                        `row-sales-${rowNumber}`
-                    );
-                    if (rowElement) {
-                        rowElement.remove();
-                    }
-                    formMessages.innerHTML = `
-                        <div class="success-message">
-                            ${result.message}
-                        </div>
-                    `;
-                } else {
-                    let errorMessage =
-                        result.message ||
-                        "Error al eliminar el registro de ventas.";
-                    toastIt(errorMessage, "error");
-                    formMessages.innerHTML = `
-                        <div class="error-message">
-                            <p class="font-bold">${errorMessage}</p>
-                        </div>
-                    `;
-                }
-            } catch (error) {
-                console.error(
-                    "Error al enviar la solicitud de eliminación de ventas:",
-                    error
-                );
-                toastIt(
-                    "Error de conexión al eliminar ventas: " + error.message,
-                    "error"
-                );
-                formMessages.innerHTML = `
-                    <div class="error-message">
-                        <p class="font-bold">Ocurrió un error al conectar con el servidor.</p>
-                        <p>${error.message}</p>
-                    </div>
-                `;
-            } finally {
-                button.disabled = false;
-                button.textContent = "Eliminar";
-            }
-        }
-    });
-};
 
 var initializePhoneCallForm = function () {
-    // Usamos 'var' o 'function' para que sea accesible globalmente
     const form = document.getElementById("phoneCallForm");
     if (!form) {
         console.warn(
@@ -1117,6 +1127,9 @@ var initializeAuditorRecordsDeletion = function () {
         }
     });
 };
+
+
+
 
 function enforceNumericInput(elementId, allowDecimals = false) {
     const inputElement = document.getElementById(elementId);

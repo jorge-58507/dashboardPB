@@ -8,14 +8,15 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 use App\Models\dpb_gasconsumption;
+use App\Models\dpb_sale;
 
 // Importaciones para Google Sheets API
 use Google\Client;
 use Google\Service\Sheets;
 use Google\Service\Sheets\ValueRange;
-use Google\Service\Sheets\BatchUpdateSpreadsheetRequest; 
-use Google\Service\Sheets\Request as SheetRequest;       
-use Google\Service\Sheets\DeleteDimensionRequest;        
+use Google\Service\Sheets\BatchUpdateSpreadsheetRequest;
+use Google\Service\Sheets\Request as SheetRequest;
+use Google\Service\Sheets\DeleteDimensionRequest;
 
 class FormController extends Controller
 {
@@ -25,8 +26,11 @@ class FormController extends Controller
      */
 
     // GUARDAR EN LA BD Y LUEGO EN LA TABLA
-    protected $sheet = ['gasConsumption'=>'f','sale'=>'h'];
-    public function fillTable($sheetName,$rowData,$databaseId)
+    protected $sheet = [
+        'gasConsumption' => 'f',
+        'sale' => 'h'
+    ];
+    public function fillTable($sheetName, $rowData, $databaseId)
     {
         $values = [$rowData]; // La API espera un array de arrays para las filas
         try {
@@ -37,7 +41,7 @@ class FormController extends Controller
             $spreadsheetId = config('google.sheet_id');
 
             // Ajusta este rango si las columnas para tableid están en otro lugar.
-            $readRange = $sheetName . '!X:Y'; 
+            $readRange = $sheetName . '!X:Y';
             $response = $service->spreadsheets_values->get($spreadsheetId, $readRange);
             $existingRows = $response->getValues();
 
@@ -49,7 +53,7 @@ class FormController extends Controller
                         Log::warning('Intento de registro duplicado detectado.', [
                             'table_id' => $existingTableId,
                         ]);
-                        return ['message'=>'Ya existe este registro. No se permite duplicar.', 'HTTPcode' =>409];
+                        return ['message' => 'Ya existe este registro. No se permite duplicar.', 'HTTPcode' => 409];
                     }
                 }
             }
@@ -68,19 +72,18 @@ class FormController extends Controller
             $result = $service->spreadsheets_values->append($spreadsheetId, $range, $body, $params);
             // Manejo de la respuesta de la API y retorno de éxito/error
             if ($result->getUpdates() && $result->getUpdates()->getUpdatedRows() > 0) {
-                return ['message'=>'Datos guardados con éxito.', 'HTTPcode' =>200];
+                return ['message' => 'Datos guardados con éxito.', 'HTTPcode' => 200];
             } else {
                 Log::error('Fallo al añadir fila a Google Sheet, no se actualizaron filas.', ['result' => $result]);
-                return ['message'=>'Hubo un problema al guardar los datos.', 'HTTPcode' =>500];
+                return ['message' => 'Hubo un problema al guardar los datos.', 'HTTPcode' => 500];
             }
 
         } catch (\Exception $e) {
             Log::error('Error al guardar datos: ' . $e->getMessage(), ['exception' => $e]);
-            return ['message'=>'Error en el servidor al comunicarse con Google Sheets'.$e->getMessage(), 'HTTPcode' =>400];
+            return ['message' => 'Error en el servidor al comunicarse con Google Sheets' . $e->getMessage(), 'HTTPcode' => 400];
         }
     }
-    
-    public function removeTable($sheetName,$databaseId)
+    public function removeTable($sheetName, $databaseId)
     {
         try {
             $client = new Client();
@@ -89,16 +92,16 @@ class FormController extends Controller
             $service = new Sheets($client);
             $spreadsheetId = config('google.sheet_id');
 
-            $readRange = $sheetName . '!X:Y'; 
+            $readRange = $sheetName . '!X:Y';
             $response = $service->spreadsheets_values->get($spreadsheetId, $readRange);
             $existingRows = $response->getValues();
 
             if ($existingRows) {
                 $dataRows = array_slice($existingRows, 1); //quitar el encabezado
                 foreach ($dataRows as $index => $row) {
-                    $existingTableId = $row[0] ?? null; 
+                    $existingTableId = $row[0] ?? null;
                     if ($existingTableId == $databaseId) {
-                        $rowNumber = $index+1; 
+                        $rowNumber = $index + 1;
                         break;
                     }
                 }
@@ -124,7 +127,7 @@ class FormController extends Controller
                     'sheetId' => $targetSheetId,
                     'dimension' => 'ROWS',
                     'startIndex' => $rowNumber,
-                    'endIndex' => $rowNumber+1
+                    'endIndex' => $rowNumber + 1
                 ]
             ]);
 
@@ -145,8 +148,8 @@ class FormController extends Controller
             return ['message' => 'Error en el servidor al comunicarse con Google Sheets.', 'HTTPcode' => 500];
         }
     }
-
-    public function updateTable($sheetName, $databaseId, $newRowData){
+    public function updateTable($sheetName, $databaseId, $newRowData)
+    {
         try {
             $client = new Client();
             $client->setAuthConfig(config('google.service_account_credentials_path'));
@@ -214,18 +217,15 @@ class FormController extends Controller
     public function submitGasToSheet(Request $request)
     {
         $gas_price = 0.45;
-        // 1. Definir y ejecutar la validación
         $rules = [
-            'cala'          => 'required|numeric|max:999999999|min:0',
-            'lavanderia'    => 'required|numeric|max:999999999|min:0',
-            'cocina'        => 'required|numeric|max:999999999|min:0',
-            'velero'        => 'required|numeric|max:999999999|min:0',
-            'agua'          => 'required|numeric|max:999999999|min:0',
-            'date'          => 'required|date|before_or_equal:today',
+            'cala' => 'required|numeric|max:999999999|min:0',
+            'lavanderia' => 'required|numeric|max:999999999|min:0',
+            'cocina' => 'required|numeric|max:999999999|min:0',
+            'velero' => 'required|numeric|max:999999999|min:0',
+            'agua' => 'required|numeric|max:999999999|min:0',
+            'date' => 'required|date|before_or_equal:today',
         ];
-
         $validator = Validator::make($request->all(), $rules);
-
         if ($validator->fails()) {
             // Si la validación falla, devuelve un JSON con los errores
             return response()->json([
@@ -238,34 +238,34 @@ class FormController extends Controller
 
         $userId = Auth::id();
 
-        $qry_gasconsumption_date = dpb_gasconsumption::where('gasconsumption_date',$validatedData['date']);
-        $qry_gasconsumption_dateuser = dpb_gasconsumption::where('gasconsumption_date',$validatedData['date'])->where('gasconsumption_userid',$userId);
-        
+        $qry_gasconsumption_date = dpb_gasconsumption::where('gasconsumption_date', $validatedData['date']);
+        $qry_gasconsumption_dateuser = dpb_gasconsumption::where('gasconsumption_date', $validatedData['date'])->where('gasconsumption_userid', $userId);
+
         if ($qry_gasconsumption_dateuser->count() > 0) {
-            return response()->json(['status' => 'fail', 'message' => 'Registro ya existe.'],422);
+            return response()->json(['status' => 'fail', 'message' => 'Registro ya existe.'], 422);
         }
         if ($qry_gasconsumption_date->count() > 0) {
             $validatedData['databaseId'] = $qry_gasconsumption_date->first()->gasconsumption_id;
-            return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData],422);
+            return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData], 422);
         }
 
         $m_gasconsumption = new dpb_gasconsumption;
-        $m_gasconsumption->gasconsumption_date      = $validatedData['date'];
-        $m_gasconsumption->gasconsumption_userid    = $userId;
-        $m_gasconsumption->gasconsumption_cala      = $validatedData['cala'];
-        $m_gasconsumption->gasconsumption_laundry   = $validatedData['lavanderia'];
-        $m_gasconsumption->gasconsumption_velero    = $validatedData['velero'];
-        $m_gasconsumption->gasconsumption_kitchen   = $validatedData['cocina'];
-        $m_gasconsumption->gasconsumption_hotwater  = $validatedData['agua'];
-        $m_gasconsumption->gasconsumption_price     = $gas_price;
-        $m_gasconsumption->gasconsumption_status    = 1;
+        $m_gasconsumption->gasconsumption_date = $validatedData['date'];
+        $m_gasconsumption->gasconsumption_userid = $userId;
+        $m_gasconsumption->gasconsumption_cala = $validatedData['cala'];
+        $m_gasconsumption->gasconsumption_laundry = $validatedData['lavanderia'];
+        $m_gasconsumption->gasconsumption_velero = $validatedData['velero'];
+        $m_gasconsumption->gasconsumption_kitchen = $validatedData['cocina'];
+        $m_gasconsumption->gasconsumption_hotwater = $validatedData['agua'];
+        $m_gasconsumption->gasconsumption_price = $gas_price;
+        $m_gasconsumption->gasconsumption_status = 1;
         $m_gasconsumption->save();
-        
+
         // 2. Preparar los datos para Google Sheets
         $min = 15;
         $max = 9999;
         $rowData = [
-            floatval($validatedData['cala']*$gas_price),
+            floatval($validatedData['cala'] * $gas_price),
             $validatedData['date'],
             mt_rand($min, $max),
             mt_rand($min, max: $max),
@@ -276,25 +276,25 @@ class FormController extends Controller
             mt_rand($min, $max),
             $userId,
             mt_rand($min, $max),
-            floatval($validatedData['lavanderia']*$gas_price),
+            floatval($validatedData['lavanderia'] * $gas_price),
             mt_rand($min, $max),
             mt_rand($min, $max),
             $validatedData['cala'],
-            floatval($validatedData['cocina']*$gas_price),
+            floatval($validatedData['cocina'] * $gas_price),
             mt_rand($min, $max),
             mt_rand($min, $max),
-            floatval($validatedData['velero']*$gas_price),
+            floatval($validatedData['velero'] * $gas_price),
             mt_rand($min, $max),
             $validatedData['cocina'],
-            floatval($validatedData['agua']*$gas_price),
+            floatval($validatedData['agua'] * $gas_price),
             now()->toDateTimeString(),
             $m_gasconsumption->gasconsumption_id
         ];
-        $ans = $this->fillTable($this->sheet['gasConsumption'],$rowData,$request->input('date'),$userId);
+        $ans = $this->fillTable($this->sheet['gasConsumption'], $rowData, $m_gasconsumption->gasconsumption_id);
         return response()->json(['message' => $ans['message']], $ans['HTTPcode']);
     }
     public function showGasConsumptionRecords()
-    {   
+    {
         $sheetName = $this->sheet['gasConsumption'];
         $spreadsheetId = config('google.sheet_id');
         $limitRows = 30; // Límite de filas a mostrar
@@ -305,18 +305,18 @@ class FormController extends Controller
         $isAdmin = $currentUser->hasRole('Admin'); // Usando el método hasRole de Spatie/Laravel-Permission
 
         try {
-            $rs_gasConsumption = dpb_gasconsumption::ORDERBY('gasconsumption_status','DESC')->ORDERBY('gasconsumption_date','DESC')
-            ->JOIN('users','users.id','dpb_gasconsumptions.gasconsumption_userid')->LIMIT(30)->GET();
+            $rs_gasConsumption = dpb_gasconsumption::ORDERBY('gasconsumption_status', 'DESC')->ORDERBY('gasconsumption_date', 'DESC')
+                ->JOIN('users', 'users.id', 'dpb_gasconsumptions.gasconsumption_userid')->LIMIT(30)->GET();
             $displayHeaders = [
-             	'gasconsumption_date'       =>'Fecha',
-             	'name'                      =>'Usuario',
-             	'gasconsumption_cala'       =>'Cala',
-             	'gasconsumption_laundry'    =>'Lavanderia',
-             	'gasconsumption_kitchen'    =>'Cocina',
-            	'gasconsumption_velero'     =>'Velero',
-             	'gasconsumption_hotwater'   =>'Agua Caliente',
-             	'gasconsumption_price'      =>'Precio',
-             	'gasconsumption_status'     =>'Estado'
+                'gasconsumption_date' => 'Fecha',
+                'name' => 'Usuario',
+                'gasconsumption_cala' => 'Cala',
+                'gasconsumption_laundry' => 'Lavanderia',
+                'gasconsumption_kitchen' => 'Cocina',
+                'gasconsumption_velero' => 'Velero',
+                'gasconsumption_hotwater' => 'Agua Caliente',
+                'gasconsumption_price' => 'Precio',
+                'gasconsumption_status' => 'Estado'
             ];
             return view('forms.gasConsumption_records', compact('displayHeaders', 'rs_gasConsumption'));
         } catch (\Exception $e) {
@@ -324,17 +324,18 @@ class FormController extends Controller
             return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
         }
     }
-    public function updateGas(Request $request){
+    public function updateGas(Request $request)
+    {
         $gas_price = 0.45;
         $userId = Auth::id();
         $rules = [
-            'cala'              => 'required|numeric|max:999999999|min:0',
-            'lavanderia'        => 'required|numeric|max:999999999|min:0',
-            'cocina'            => 'required|numeric|max:999999999|min:0',
-            'velero'            => 'required|numeric|max:999999999|min:0',
-            'agua'              => 'required|numeric|max:999999999|min:0',
-            'date'              => 'required|date|before_or_equal:today',
-            'databaseId'        => 'required|integer'
+            'cala' => 'required|numeric|max:999999999|min:0',
+            'lavanderia' => 'required|numeric|max:999999999|min:0',
+            'cocina' => 'required|numeric|max:999999999|min:0',
+            'velero' => 'required|numeric|max:999999999|min:0',
+            'agua' => 'required|numeric|max:999999999|min:0',
+            'date' => 'required|date|before_or_equal:today',
+            'databaseId' => 'required|integer'
         ];
         $validator = Validator::make($request->all(), $rules);
 
@@ -349,22 +350,22 @@ class FormController extends Controller
         $validatedData = $validator->validated(); // Obtener los datos validados
 
         $m_gasconsumption = dpb_gasconsumption::find($validatedData['databaseId']);
-        $m_gasconsumption->gasconsumption_date      = $validatedData['date'];
-        $m_gasconsumption->gasconsumption_userid    = $userId;
-        $m_gasconsumption->gasconsumption_cala      = $validatedData['cala'];
-        $m_gasconsumption->gasconsumption_laundry   = $validatedData['lavanderia'];
-        $m_gasconsumption->gasconsumption_velero    = $validatedData['velero'];
-        $m_gasconsumption->gasconsumption_kitchen   = $validatedData['cocina'];
-        $m_gasconsumption->gasconsumption_hotwater  = $validatedData['agua'];
-        $m_gasconsumption->gasconsumption_price     = $gas_price;
-        $m_gasconsumption->gasconsumption_status    = 1;
+        $m_gasconsumption->gasconsumption_date = $validatedData['date'];
+        $m_gasconsumption->gasconsumption_userid = $userId;
+        $m_gasconsumption->gasconsumption_cala = $validatedData['cala'];
+        $m_gasconsumption->gasconsumption_laundry = $validatedData['lavanderia'];
+        $m_gasconsumption->gasconsumption_velero = $validatedData['velero'];
+        $m_gasconsumption->gasconsumption_kitchen = $validatedData['cocina'];
+        $m_gasconsumption->gasconsumption_hotwater = $validatedData['agua'];
+        $m_gasconsumption->gasconsumption_price = $gas_price;
+        $m_gasconsumption->gasconsumption_status = 1;
         $m_gasconsumption->save();
 
         // Prepara la fila con los datos actualizados para Google Sheets
         $min = 15;
         $max = 9999;
         $newRowData = [
-            floatval($validatedData['cala']*$gas_price),
+            floatval($validatedData['cala'] * $gas_price),
             $validatedData['date'],
             mt_rand($min, $max),
             mt_rand($min, max: $max),
@@ -375,26 +376,26 @@ class FormController extends Controller
             mt_rand($min, $max),
             $userId,
             mt_rand($min, $max),
-            floatval($validatedData['lavanderia']*$gas_price),
+            floatval($validatedData['lavanderia'] * $gas_price),
             mt_rand($min, $max),
             mt_rand($min, $max),
             $validatedData['cala'],
-            floatval($validatedData['cocina']*$gas_price),
+            floatval($validatedData['cocina'] * $gas_price),
             mt_rand($min, $max),
             mt_rand($min, $max),
-            floatval($validatedData['velero']*$gas_price),
+            floatval($validatedData['velero'] * $gas_price),
             mt_rand($min, $max),
             $validatedData['cocina'],
-            floatval($validatedData['agua']*$gas_price),
+            floatval($validatedData['agua'] * $gas_price),
             now()->toDateTimeString(),
             $m_gasconsumption->gasconsumption_id
         ];
 
         $ans = $this->updateTable($this->sheet['gasConsumption'], $validatedData['databaseId'], $newRowData);
         if ($ans['status'] === 'success') {
-            return response()->json(['status' => 'success'  , 'message' => $ans['message']], $ans['HTTPcode']);
-        }else{
-            return response()->json(['status' => 'fail'     , 'message' => $ans['message']], $ans['HTTPcode']);
+            return response()->json(['status' => 'success', 'message' => $ans['message']], $ans['HTTPcode']);
+        } else {
+            return response()->json(['status' => 'fail', 'message' => $ans['message']], $ans['HTTPcode']);
         }
     }
     public function deleteGasConsumption(Request $request)
@@ -407,7 +408,7 @@ class FormController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json(['message' => 'Validation Failed','errors' => $validator->errors()], 422);
+            return response()->json(['message' => 'Validation Failed', 'errors' => $validator->errors()], 422);
         }
 
         $gasConsumption_id = $request->input('gasConsumption_id');
@@ -416,22 +417,22 @@ class FormController extends Controller
         $rs_gasConsumption->gasConsumption_status = 0;
         $rs_gasConsumption->save();
 
-        $result = $this->removeTable($this->sheet['gasConsumption'],$gasConsumption_id);
+        $result = $this->removeTable($this->sheet['gasConsumption'], $gasConsumption_id);
         return response()->json(['message' => $result['message']], $result['HTTPcode']);
     }
 
 
     protected $salesHeadersMap = [
-        16 => 'Creación',          
-        23 => 'Fecha',         
-        6 => 'Usuario',       
-        1 => 'Corporativo',     
+        16 => 'Creación',
+        23 => 'Fecha',
+        6 => 'Usuario',
+        1 => 'Corporativo',
         3 => 'Ag. Nacional',
-        12 => 'Ag. Internacional',       
-        8 => 'Callcenter',       
-        10 => 'OTAs',       
-        13 => 'Arenas',       
-        19 => 'Pag. Web',       
+        12 => 'Ag. Internacional',
+        8 => 'Callcenter',
+        10 => 'OTAs',
+        13 => 'Arenas',
+        19 => 'Pag. Web',
     ];
     public function showSalesForm()
     {
@@ -439,16 +440,15 @@ class FormController extends Controller
     }
     public function submitSales(Request $request)
     {
-        // Validación de datos
         $validator = Validator::make($request->all(), [
-            'montoWeb'              => ['required', 'numeric', 'min:0'],
-            'montoCallcenter'       => ['required', 'numeric', 'min:0'],
-            'montoOTA'              => ['required', 'numeric', 'min:0'],
-            'montoCorporativo'      => ['required', 'numeric', 'min:0'],
-            'montoAgenciaNac'       => ['required', 'numeric', 'min:0'],
-            'montoAgenciaInt'       => ['required', 'numeric', 'min:0'],
-            'montoArenas'           => ['required', 'numeric', 'min:0'],
-            'fechaRegistro'         => ['required', 'date', 'before_or_equal:today'], // La fecha no puede ser futura
+            'montoWeb' => ['required', 'numeric', 'min:0'],
+            'montoCallcenter' => ['required', 'numeric', 'min:0'],
+            'montoOTA' => ['required', 'numeric', 'min:0'],
+            'montoCorporativo' => ['required', 'numeric', 'min:0'],
+            'montoAgenciaNac' => ['required', 'numeric', 'min:0'],
+            'montoAgenciaInt' => ['required', 'numeric', 'min:0'],
+            'montoArenas' => ['required', 'numeric', 'min:0'],
+            'fechaRegistro' => ['required', 'date', 'before_or_equal:today'], // La fecha no puede ser futura
         ], [
             'montoWeb.required' => 'El campo Monto Total Ventas Hospedaje es obligatorio.',
             'montoWeb.numeric' => 'El campo Monto Total Ventas Hospedaje debe ser un número.',
@@ -483,105 +483,270 @@ class FormController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
+        $userId = Auth::id(); // ID del usuario autenticado
+        $validatedData = $validator->validated(); // Obtener los datos validados
+
+        $qry_date = dpb_sale::where('sale_date', $validatedData['fechaRegistro']);
+        $qry_dateuser = dpb_sale::where('sale_date', $validatedData['fechaRegistro'])->where('sale_userid', $userId);
+
+        if ($qry_dateuser->count() > 0) {
+            return response()->json(['status' => 'fail', 'message' => 'Registro ya existe.'], 422);
+        }
+        if ($qry_date->count() > 0) {
+            $validatedData['databaseId'] = $qry_date->first()->sale_id;
+            return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData], 422);
+        }
+
+        $m_sale = new dpb_sale;
+        $m_sale->sale_date = $validatedData['fechaRegistro'];
+        $m_sale->sale_userid = $userId;
+        $m_sale->sale_corporative = $validatedData['montoCorporativo'];
+        $m_sale->sale_national = $validatedData['montoAgenciaNac'];
+        $m_sale->sale_international = $validatedData['montoAgenciaInt'];
+        $m_sale->sale_callcenter = $validatedData['montoCallcenter'];
+        $m_sale->sale_ota = $validatedData['montoOTA'];
+        $m_sale->sale_arenas = $validatedData['montoArenas'];
+        $m_sale->sale_web = $validatedData['montoWeb'];
+        $m_sale->sale_status = 1;
+        $m_sale->save();
 
         $min = 15;
         $max = 9999;
-        $userId = Auth::id(); // ID del usuario autenticado
-
-        
-
-
         $rowData = [
-            mt_rand($min, $max), // Columna 1 (índice 0)
-            floatval($request->input('montoCorporativo')),     // Columna 2 (índice 1)
-            mt_rand($min, $max), // Columna 3 (índice 2)
-            floatval($request->input('montoAgenciaNac')),     // Columna 4 (índice 3)
-            mt_rand($min, $max), // Columna 5 (índice 4)
-            mt_rand($min, $max), // Columna 6 (índice 5)
-            $userId,             // Columna 7 (índice 6)
-            mt_rand($min, $max), // Columna 8 (índice 7)
-            floatval($request->input('montoCallcenter')),     // Columna 9 (índice 8)
-            mt_rand($min, $max), // Columna 10 (índice 9)
-            floatval($request->input('montoOTA')),            // Columna 11 (índice 10)
-            mt_rand($min, $max), // Columna 12 (índice 11)
-            floatval($request->input('montoAgenciaInt')),     // Columna 13 (índice 12)
-            floatval($request->input('montoArenas')),         // Columna 14 (índice 13)
-            mt_rand($min, $max), // Columna 15 (índice 14)
-            mt_rand($min, $max), // Columna 16 (índice 15)
-            now()->toDateTimeString(),              // Columna 17 (índice 16) - timestamp_insercion
-            mt_rand($min, $max), // Columna 18 (índice 17)
-            mt_rand($min, $max), // Columna 19 (índice 18)
-            floatval($request->input('montoWeb')),         // Columna 20 (índice 19)
-            mt_rand($min, $max), // Columna 21 (índice 20)
-            mt_rand($min, $max), // Columna 22 (índice 21)
-            mt_rand($min, $max), // Columna 23 (índice 22)
-            $request->input('fechaRegistro'),     // Columna 24 (índice 23) - fechaRegistro
+            mt_rand($min, $max),
+            floatval($request->input('montoCorporativo')),
+            mt_rand($min, $max),
+            floatval($request->input('montoAgenciaNac')),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            $userId,
+            mt_rand($min, $max),
+            floatval($request->input('montoCallcenter')),
+            mt_rand($min, $max),
+            floatval($request->input('montoOTA')),
+            mt_rand($min, $max),
+            floatval($request->input('montoAgenciaInt')),
+            floatval($request->input('montoArenas')),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            now()->toDateTimeString(),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            floatval($request->input('montoWeb')),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            $request->input('fechaRegistro'),
+            $m_sale->sale_id
         ];
-        $ans = $this->fillTable('h',$rowData,$request->input('fechaRegistro'),$userId);
+        $ans = $this->fillTable($this->sheet['sale'], $rowData, $m_sale->sale_id);
         return response()->json(['message' => $ans['message']], $ans['HTTPcode']);
     }
+    public function updateSales(Request $request)
+    {
+        $userId = Auth::id();
+        $validator = Validator::make($request->all(), [
+            'montoWeb' => ['required', 'numeric', 'min:0'],
+            'montoCallcenter' => ['required', 'numeric', 'min:0'],
+            'montoOTA' => ['required', 'numeric', 'min:0'],
+            'montoCorporativo' => ['required', 'numeric', 'min:0'],
+            'montoAgenciaNac' => ['required', 'numeric', 'min:0'],
+            'montoAgenciaInt' => ['required', 'numeric', 'min:0'],
+            'montoArenas' => ['required', 'numeric', 'min:0'],
+            'fechaRegistro' => ['required', 'date', 'before_or_equal:today'], // La fecha no puede ser futura
+            'databaseId' => ['required', 'numeric', 'min:1'],
+        ], [
+            'montoWeb.required' => 'El campo Monto Total Ventas Hospedaje es obligatorio.',
+            'montoWeb.numeric' => 'El campo Monto Total Ventas Hospedaje debe ser un número.',
+            'montoWeb.min' => 'El campo Monto Total Ventas Hospedaje no puede ser negativo.',
+            'montoCallcenter.required' => 'El campo Monto Total Ventas Hospedaje es obligatorio.',
+            'montoCallcenter.numeric' => 'El campo Monto Total Ventas Hospedaje debe ser un número.',
+            'montoCallcenter.min' => 'El campo Monto Total Ventas Hospedaje no puede ser negativo.',
+            'montoOTA.required' => 'El campo Monto Total Ventas Hospedaje es obligatorio.',
+            'montoOTA.numeric' => 'El campo Monto Total Ventas Hospedaje debe ser un número.',
+            'montoOTA.min' => 'El campo Monto Total Ventas Hospedaje no puede ser negativo.',
+            'montoCorporativo.required' => 'El campo Monto Total Ventas Hospedaje es obligatorio.',
+            'montoCorporativo.numeric' => 'El campo Monto Total Ventas Hospedaje debe ser un número.',
+            'montoCorporativo.min' => 'El campo Monto Total Ventas Hospedaje no puede ser negativo.',
+            'montoAgenciaNac.required' => 'El campo Monto Total Ventas Hospedaje es obligatorio.',
+            'montoAgenciaNac.numeric' => 'El campo Monto Total Ventas Hospedaje debe ser un número.',
+            'montoAgenciaNac.min' => 'El campo Monto Total Ventas Hospedaje no puede ser negativo.',
+            'montoAgenciaInt.required' => 'El campo Monto Total Ventas Hospedaje es obligatorio.',
+            'montoAgenciaInt.numeric' => 'El campo Monto Total Ventas Hospedaje debe ser un número.',
+            'montoAgenciaInt.min' => 'El campo Monto Total Ventas Hospedaje no puede ser negativo.',
+            'montoArenas.required' => 'El campo Monto Total Ventas Hospedaje es obligatorio.',
+            'montoArenas.numeric' => 'El campo Monto Total Ventas Hospedaje debe ser un número.',
+            'montoArenas.min' => 'El campo Monto Total Ventas Hospedaje no puede ser negativo.',
+            'fechaRegistro.required' => 'El campo Fecha del Registro es obligatorio.',
+            'fechaRegistro.date' => 'El campo Fecha del Registro debe ser una fecha válida.',
+            'fechaRegistro.before_or_equal' => 'La Fecha del Registro no puede ser mayor a la fecha actual.',
+            'databaseId.required' => 'El campo ID es obligatorio.',
+            'databaseId.numeric' => 'El campo ID debe ser un número.',
+            'databaseId.min' => 'El campo ID no puede ser negativo.',
+
+        ]);
+
+        if ($validator->fails()) {
+            // Si la validación falla, devuelve un JSON con los errores
+            return response()->json([
+                'success' => false,
+                'message' => 'Falló la validación',
+                'errors' => $validator->errors(),
+            ], 422); // Código de estado 422 para errores de validación
+        }
+        $validatedData = $validator->validated(); // Obtener los datos validados
+
+        $m_sale = dpb_sale::find($validatedData['databaseId']);
+        $m_sale->sale_date = $validatedData['fechaRegistro'];
+        $m_sale->sale_userid = $userId;
+        $m_sale->sale_corporative = $validatedData['montoCorporativo'];
+        $m_sale->sale_national = $validatedData['montoAgenciaNac'];
+        $m_sale->sale_international = $validatedData['montoAgenciaInt'];
+        $m_sale->sale_callcenter = $validatedData['montoCallcenter'];
+        $m_sale->sale_ota = $validatedData['montoOTA'];
+        $m_sale->sale_arenas = $validatedData['montoArenas'];
+        $m_sale->sale_web = $validatedData['montoWeb'];
+        $m_sale->sale_status = 1;
+        $m_sale->save();
+
+        // Prepara la fila con los datos actualizados para Google Sheets
+        $min = 15;
+        $max = 9999;
+        $newRowData = [
+            mt_rand($min, $max),
+            floatval($request->input('montoCorporativo')),
+            mt_rand($min, $max),
+            floatval($request->input('montoAgenciaNac')),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            $userId,
+            mt_rand($min, $max),
+            floatval($request->input('montoCallcenter')),
+            mt_rand($min, $max),
+            floatval($request->input('montoOTA')),
+            mt_rand($min, $max),
+            floatval($request->input('montoAgenciaInt')),
+            floatval($request->input('montoArenas')),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            now()->toDateTimeString(),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            floatval($request->input('montoWeb')),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            $request->input('fechaRegistro'),
+            $m_sale->sale_id
+        ];
+
+        $ans = $this->updateTable($this->sheet['sale'], $validatedData['databaseId'], $newRowData);
+        if ($ans['status'] === 'success') {
+            return response()->json(['status' => 'success', 'message' => $ans['message']], $ans['HTTPcode']);
+        } else {
+            return response()->json(['status' => 'fail', 'message' => $ans['message']], $ans['HTTPcode']);
+        }
+    }
+
     public function showSalesRecords()
     {
-        $sheetName = 'h';
+        $sheetName = $this->sheet['sale'];
         $spreadsheetId = config('google.sheet_id');
         $limitRows = 30;
 
         $currentUser = Auth::user();
         $currentUserId = $currentUser->id;
-        $isAdmin = $currentUser->hasRole('Admin'); // O tu método para verificar admin
+
+        $isAdmin = $currentUser->hasRole('Admin'); // Usando el método hasRole de Spatie/Laravel-Permission
 
         try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS_READONLY);
-            $service = new Sheets($client);
-
-            $fullRange = $sheetName . '!A:X';
-            $response = $service->spreadsheets_values->get($spreadsheetId, $fullRange);
-            $values = $response->getValues();
-
-            $displayHeaders = [];
-            $records = [];
-            $customHeadersMap = $this->salesHeadersMap;
-
-            foreach ($customHeadersMap as $colIndex => $customName) {
-                $displayHeaders[$colIndex] = $customName;
-            }
-
-            if (!empty($values)) {
-                array_shift($values); // Remueve la fila de encabezados
-                $filteredRows = [];
-                foreach ($values as $index => $row) {
-                    $rowUserId = $row[6] ?? null;
-
-                    if ($isAdmin || (string) $rowUserId === (string) $currentUserId) {
-                        $recordData = ['row_number_gs' => ($index + 2)];
-                        $recordData['data_cols'] = [];
-                        foreach ($displayHeaders as $colIndex => $headerName) {
-                            $recordData['data_cols'][$colIndex] = $row[$colIndex] ?? '';
-                        }
-                        $filteredRows[] = $recordData;
-                    }
-                }
-                $filteredRows = array_reverse($filteredRows);
-                $records = array_slice($filteredRows, -$limitRows);
-            }
-
+            $records = dpb_sale::ORDERBY('sale_status', 'DESC')->ORDERBY('sale_date', 'DESC')
+                ->JOIN('users', 'users.id', 'dpb_sales.sale_userid')->LIMIT(30)->GET();
+            $displayHeaders = [
+                'sale_date' => 'Fecha',
+                'name' => 'Usuario',
+                'sale_corporative' => 'Corporativo',
+                'sale_national' => 'Ag. Nacional',
+                'sale_international' => 'Ag. Internacional',
+                'sale_callcenter' => 'Callcenter',
+                'sale_ota' => 'OTAs',
+                'sale_arenas' => 'Arenas',
+                'sale_web' => 'Pag. Web',
+                'sale_status' => 'Estado'
+            ];
             return view('forms.sales_records', compact('displayHeaders', 'records'));
-
         } catch (\Exception $e) {
-            Log::error('Error al cargar registros de Ventas: ' . $e->getMessage());
+            Log::error('Error al cargar registros: ' . $e->getMessage());
             return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
         }
+
+
+        /*
+
+
+
+            $currentUser = Auth::user();
+            $currentUserId = $currentUser->id;
+            $isAdmin = $currentUser->hasRole('Admin'); // O tu método para verificar admin
+
+
+
+
+
+
+
+
+            try {
+                $client = new Client();
+                $client->setAuthConfig(config('google.service_account_credentials_path'));
+                $client->addScope(Sheets::SPREADSHEETS_READONLY);
+                $service = new Sheets($client);
+
+                $fullRange = $sheetName . '!A:X';
+                $response = $service->spreadsheets_values->get($spreadsheetId, $fullRange);
+                $values = $response->getValues();
+
+                $displayHeaders = [];
+                $records = [];
+                $customHeadersMap = $this->salesHeadersMap;
+
+                foreach ($customHeadersMap as $colIndex => $customName) {
+                    $displayHeaders[$colIndex] = $customName;
+                }
+
+                if (!empty($values)) {
+                    array_shift($values); // Remueve la fila de encabezados
+                    $filteredRows = [];
+                    foreach ($values as $index => $row) {
+                        $rowUserId = $row[6] ?? null;
+
+                        if ($isAdmin || (string) $rowUserId === (string) $currentUserId) {
+                            $recordData = ['row_number_gs' => ($index + 2)];
+                            $recordData['data_cols'] = [];
+                            foreach ($displayHeaders as $colIndex => $headerName) {
+                                $recordData['data_cols'][$colIndex] = $row[$colIndex] ?? '';
+                            }
+                            $filteredRows[] = $recordData;
+                        }
+                    }
+                    $filteredRows = array_reverse($filteredRows);
+                    $records = array_slice($filteredRows, -$limitRows);
+                }
+
+                return view('forms.sales_records', compact('displayHeaders', 'records'));
+
+            } catch (\Exception $e) {
+                Log::error('Error al cargar registros de Ventas: ' . $e->getMessage());
+                return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
+            }
+        */
     }
     public function deleteSales(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'row_number' => ['required', 'integer', 'min:2'],
+            'sale_id' => ['required', 'integer', 'min:1'],
         ], [
-            'row_number.required' => 'El número de fila es obligatorio para la eliminación.',
-            'row_number.integer' => 'El número de fila debe ser un número entero.',
-            'row_number.min' => 'No se puede eliminar la fila de encabezados.',
+            'sale_id.required' => 'El número de fila es obligatorio para la eliminación.',
+            'sale_id.integer' => 'El número de fila debe ser un número entero.',
+            'sale_id.min' => 'No se puede eliminar la fila de encabezados.',
         ]);
 
         if ($validator->fails()) {
@@ -591,19 +756,25 @@ class FormController extends Controller
             ], 422);
         }
 
-        $rowNumber = $request->input('row_number');
-        $result = $this->removeTable('h',$rowNumber);
+        $sale_id = $request->input('sale_id');
+
+        $rs_sale = dpb_sale::find($sale_id);
+        $rs_sale->sale_status = 0;
+        $rs_sale->save();
+
+        $rowNumber = $request->input('sale_id');
+        $result = $this->removeTable($this->sheet['sale'], $sale_id);
         return response()->json(['message' => $result['message']], $result['HTTPcode']);
     }
 
 
 
     protected $laundryHeadersMap = [
-        16 => 'Creación',           
-        4 => 'Usuario',           
-        8 => 'Fecha Inicio',      
-        20 => 'Fecha Final',      
-        14 => 'Total Gasto',      
+        16 => 'Creación',
+        4 => 'Usuario',
+        8 => 'Fecha Inicio',
+        20 => 'Fecha Final',
+        14 => 'Total Gasto',
         19 => 'Cantidad de Ciclos',
     ];
     public function showLaundryForm()
@@ -614,10 +785,10 @@ class FormController extends Controller
     {
         // ACTUALIZACIÓN: Reglas de validación para fechaInicio y fechaFin
         $validator = Validator::make($request->all(), [
-            'totalGasto'        => ['required', 'numeric', 'min:0'],
-            'cantidadCiclos'    => ['required', 'integer', 'min:0'],
-            'fechaInicio'       => ['required', 'date'], // NUEVA REGLA
-            'fechaFin'          => ['required', 'date', 'after_or_equal:fechaInicio', 'before_or_equal:today'],
+            'totalGasto' => ['required', 'numeric', 'min:0'],
+            'cantidadCiclos' => ['required', 'integer', 'min:0'],
+            'fechaInicio' => ['required', 'date'], // NUEVA REGLA
+            'fechaFin' => ['required', 'date', 'after_or_equal:fechaInicio', 'before_or_equal:today'],
         ], [
             'totalGasto.required' => 'El campo Gasto Total es obligatorio.',
             'totalGasto.numeric' => 'El campo Gasto Total debe ser un número.',
@@ -671,7 +842,7 @@ class FormController extends Controller
         ];
 
         $values = [$rowData];
-        
+
         try {
             $client = new Client();
             $client->setAuthConfig(config('google.service_account_credentials_path'));
@@ -782,19 +953,19 @@ class FormController extends Controller
         }
 
         $rowNumber = $request->input('row_number');
-        $result = $this->removeTable('g',$rowNumber);
+        $result = $this->removeTable('g', $rowNumber);
         return response()->json([
-                'message' => $result['message'],
-            ], $result['HTTPcode']);
+            'message' => $result['message'],
+        ], $result['HTTPcode']);
     }
 
 
     protected $auditorHeadersMap = [
-        4 => 'Fecha',       
-        0 => 'AB',          
-        1 => 'Otro',         
-        2 => 'Usuario',       
-        3 => 'Creacion',     
+        4 => 'Fecha',
+        0 => 'AB',
+        1 => 'Otro',
+        2 => 'Usuario',
+        3 => 'Creacion',
     ];
     public function showAuditorForm()
     {
@@ -804,9 +975,9 @@ class FormController extends Controller
     {
         // Validación de datos
         $validator = Validator::make($request->all(), [
-            'montoAB'               => ['required', 'numeric', 'min:0'],
-            'montoOtro'             => ['required', 'numeric', 'min:0'],
-            'fechaRegistro'         => ['required', 'date', 'before_or_equal:today'], // La fecha no puede ser futura
+            'montoAB' => ['required', 'numeric', 'min:0'],
+            'montoOtro' => ['required', 'numeric', 'min:0'],
+            'fechaRegistro' => ['required', 'date', 'before_or_equal:today'], // La fecha no puede ser futura
         ], [
             'montoAB.required' => 'El campo Monto Total Ventas Hospedaje es obligatorio.',
             'montoAB.numeric' => 'El campo Monto Total Ventas Hospedaje debe ser un número.',
@@ -856,7 +1027,7 @@ class FormController extends Controller
             //            mt_rand($min, $max), // Columna 23 (índice 22)
             $request->input('fechaRegistro'),     // Columna 24 (índice 23) - fechaRegistro
         ];
-        $ans = $this->fillTable('l',$rowData,$request->input('fechaRegistro'),$userId);
+        $ans = $this->fillTable('l', $rowData, $request->input('fechaRegistro'), $userId);
         return response()->json(['message' => $ans['message']], $ans['HTTPcode']);
     }
     public function showAuditorRecords()
@@ -933,19 +1104,19 @@ class FormController extends Controller
         }
 
         $rowNumber = $request->input('row_number');
-        $result = $this->removeTable('l',$rowNumber);
+        $result = $this->removeTable('l', $rowNumber);
         return response()->json(['message' => $result['message']], $result['HTTPcode']);
     }
 
 
 
     protected $phoneCallHeadersMap = [
-        3 => 'Usuario',         
-        4 => 'Fecha',         
-        6 => 'Cantidad',   
-        8 => 'Ventas Logradas', 
-        11 => 'Tiempo Prom',    
-        13 => 'Creación',       
+        3 => 'Usuario',
+        4 => 'Fecha',
+        6 => 'Cantidad',
+        8 => 'Ventas Logradas',
+        11 => 'Tiempo Prom',
+        13 => 'Creación',
     ];
     public function showPhoneCallForm()
     {
@@ -955,10 +1126,10 @@ class FormController extends Controller
     {
         // 1. Validación de los datos
         $validator = Validator::make($request->all(), [
-            'fechaRegistro'             => ['required', 'date_format:Y-m-d', 'before_or_equal:' . Carbon::now()->format('Y-m-d')],
-            'cantidadLlamadas'          => ['required', 'integer', 'min:0'],
-            'ventasLogradas'            => ['required', 'integer', 'min:0'],
-            'tiempoPromedioLlamadas'    => ['required', 'numeric', 'min:0'],
+            'fechaRegistro' => ['required', 'date_format:Y-m-d', 'before_or_equal:' . Carbon::now()->format('Y-m-d')],
+            'cantidadLlamadas' => ['required', 'integer', 'min:0'],
+            'ventasLogradas' => ['required', 'integer', 'min:0'],
+            'tiempoPromedioLlamadas' => ['required', 'numeric', 'min:0'],
         ], [
             'fechaRegistro.required' => 'La fecha es obligatoria.',
             'fechaRegistro.date_format' => 'El formato de la fecha no es válido (debe ser AAAA-MM-DD).',
@@ -1016,7 +1187,7 @@ class FormController extends Controller
             mt_rand($min, $max), // Columna 24 (índice 23)
         ];
 
-        $ans = $this->fillTable('j',$rowData,$request->input('fechaRegistro'),$userId);
+        $ans = $this->fillTable('j', $rowData, $request->input('fechaRegistro'), $userId);
 
         return response()->json([
             'message' => $ans['message']
@@ -1230,7 +1401,7 @@ class FormController extends Controller
 
 
 
-    
+
     public function showInventoryHkForm()
     {
         return view('forms.inventoryhk_partial');
@@ -1239,28 +1410,28 @@ class FormController extends Controller
     {
         // 1. Validación de los datos
         $validator = Validator::make($request->all(), [
-            'fechaInventario'       => ['required', 'date_format:Y-m-d', 'before_or_equal:' . Carbon::now()->format('Y-m-d')],
-            'sheet_k'               => ['nullable', 'integer', 'min:0'],
-            'sheet_q'               => ['nullable', 'integer', 'min:0'],
-            'pillowcase_k'          => ['nullable', 'integer', 'min:0'],
-            'pillowcase_q'          => ['nullable', 'integer', 'min:0'],
-            'pillow_k'              => ['nullable', 'integer', 'min:0'],
-            'pillow_q'              => ['nullable', 'integer', 'min:0'],
-            'mattressprotector_k'   => ['nullable', 'integer', 'min:0'],
-            'mattressprotector_q'   => ['nullable', 'integer', 'min:0'],
-            'towel_blank'           => ['nullable', 'integer', 'min:0'],
-            'hand_towel'            => ['nullable', 'integer', 'min:0'],
-            'foot_towel'            => ['nullable', 'integer', 'min:0'],
-            'face_towel'            => ['nullable', 'integer', 'min:0'],
-            'towel_blue'            => ['nullable', 'integer', 'min:0'],
-            'blanket_blue'          => ['nullable', 'integer', 'min:0'],
-            'blanket_green'         => ['nullable', 'integer', 'min:0'],
-            'duveth_k'              => ['nullable', 'integer', 'min:0'],
-            'duveth_q'              => ['nullable', 'integer', 'min:0'],
-            'cover_k'               => ['nullable', 'integer', 'min:0'],
-            'cover_q'               => ['nullable', 'integer', 'min:0'],
-            'bedskirt_k'            => ['nullable', 'integer', 'min:0'],
-            'bedskirt_q'            => ['nullable', 'integer', 'min:0'],
+            'fechaInventario' => ['required', 'date_format:Y-m-d', 'before_or_equal:' . Carbon::now()->format('Y-m-d')],
+            'sheet_k' => ['nullable', 'integer', 'min:0'],
+            'sheet_q' => ['nullable', 'integer', 'min:0'],
+            'pillowcase_k' => ['nullable', 'integer', 'min:0'],
+            'pillowcase_q' => ['nullable', 'integer', 'min:0'],
+            'pillow_k' => ['nullable', 'integer', 'min:0'],
+            'pillow_q' => ['nullable', 'integer', 'min:0'],
+            'mattressprotector_k' => ['nullable', 'integer', 'min:0'],
+            'mattressprotector_q' => ['nullable', 'integer', 'min:0'],
+            'towel_blank' => ['nullable', 'integer', 'min:0'],
+            'hand_towel' => ['nullable', 'integer', 'min:0'],
+            'foot_towel' => ['nullable', 'integer', 'min:0'],
+            'face_towel' => ['nullable', 'integer', 'min:0'],
+            'towel_blue' => ['nullable', 'integer', 'min:0'],
+            'blanket_blue' => ['nullable', 'integer', 'min:0'],
+            'blanket_green' => ['nullable', 'integer', 'min:0'],
+            'duveth_k' => ['nullable', 'integer', 'min:0'],
+            'duveth_q' => ['nullable', 'integer', 'min:0'],
+            'cover_k' => ['nullable', 'integer', 'min:0'],
+            'cover_q' => ['nullable', 'integer', 'min:0'],
+            'bedskirt_k' => ['nullable', 'integer', 'min:0'],
+            'bedskirt_q' => ['nullable', 'integer', 'min:0'],
         ], [
             'fechaInventario.required' => 'La fecha del inventario es obligatoria.',
             'fechaInventario.date_format' => 'El formato de la fecha no es válido (debe ser AAAA-MM-DD).',
@@ -1281,9 +1452,9 @@ class FormController extends Controller
         $userId = Auth::id(); // ID del usuario autenticado
         $timestampInsercion = Carbon::now()->toDateTimeString(); // Timestamp de la inserción
 
-            // !IMPORTANTE!: Configura este array '$rowData' para que el orden de los datos
-            //              coincida con las columnas exactas en tu hoja de Google Sheets para Inventario HK.
-            //              Si tienes columnas de relleno, usa 'mt_rand()' o déjalas vacías según necesites.
+        // !IMPORTANTE!: Configura este array '$rowData' para que el orden de los datos
+        //              coincida con las columnas exactas en tu hoja de Google Sheets para Inventario HK.
+        //              Si tienes columnas de relleno, usa 'mt_rand()' o déjalas vacías según necesites.
         $rowData = [
             $userId,                                     // Columna A (ej. user_id)
             $timestampInsercion,                         // Columna B (ej. timestamp de inserción)
@@ -1493,7 +1664,7 @@ class FormController extends Controller
         }
 
         $rowNumber = $request->input('row_number');
-        $sheetName = 'k'; 
+        $sheetName = 'k';
 
         try {
             $client = new Client();

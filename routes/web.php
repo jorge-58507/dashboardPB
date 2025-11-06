@@ -50,6 +50,22 @@ Route::middleware('auth')->group(function () {
             ->middleware(['role:Admin|Mantenimiento'])
             ->name('gasConsumption.delete');
 
+        // Rutas para Ventas
+        Route::get('/sales-partial', [FormController::class, 'showSalesForm'])
+            ->name('sales_partial');
+        Route::post('/submit-sales', [FormController::class, 'submitSales'])
+            ->middleware(['role:Admin|Ventas'])
+            ->name('sales.submit');
+        Route::put('/submit-sales', [FormController::class, 'updateSales'])
+            ->middleware(['role:Admin|Ventas']);
+
+        Route::get('/sales-records', [FormController::class, 'showSalesRecords'])
+            ->middleware(['role:Admin|Ventas'])
+            ->name('sales.records');
+        Route::delete('/delete-sales', [FormController::class, 'deleteSales'])
+            ->middleware(['role:Admin|Ventas'])
+            ->name('sales.delete');
+
         // Rutas para Lavandería
         Route::get('/laundry-partial', [FormController::class, 'showLaundryForm'])
             ->name('laundry_partial');
@@ -62,21 +78,6 @@ Route::middleware('auth')->group(function () {
         Route::delete('/delete-laundry', [FormController::class, 'deleteLaundry'])
             ->middleware(['role:Admin|Lavanderia|Housekeeping'])
             ->name('laundry.delete');
-
-
-        // Rutas para Ventas
-        Route::get('/sales-partial', [FormController::class, 'showSalesForm'])
-            ->name('sales_partial');
-        Route::post('/submit-sales', [FormController::class, 'submitSales'])
-            ->middleware(['role:Admin|Ventas'])
-            ->name('sales.submit');
-        Route::get('/sales-records', [FormController::class, 'showSalesRecords'])
-            ->middleware(['role:Admin|Ventas'])
-            ->name('sales.records');
-        Route::delete('/delete-sales', [FormController::class, 'deleteSales'])
-            ->middleware(['role:Admin|Ventas'])
-            ->name('sales.delete');
-
 
         // Rutas para Registro Diario de Llamadas
         Route::get('/phonecall-partial', [FormController::class, 'showPhoneCallForm'])
