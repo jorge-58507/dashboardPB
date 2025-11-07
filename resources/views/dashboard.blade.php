@@ -181,10 +181,11 @@
                         } else if (formUrl === "{{ route('formulario.auditor_partial') }}") {
                             initializeAuditorForm();
                             
+                        } else if (formUrl === "{{ route('formulario.gasConsumption.records') }}") { 
+                            initializeGasConsumptionRecordsFilter();
+                            initializeGasConsumptionRecordsDeletion();
                         } else if (formUrl === "{{ route('formulario.inventoryhk.records') }}") {
                             initializeInventoryHkRecordsDeletion();
-                        }else if (formUrl === "{{ route('formulario.gasConsumption.records') }}") { 
-                            initializeGasConsumptionRecordsDeletion();
                         }else if (formUrl === "{{ route('formulario.laundry.records') }}") {
                             initializeLaundryRecordsDeletion();
                         }else if (formUrl === "{{ route('formulario.phonecall.records') }}") {

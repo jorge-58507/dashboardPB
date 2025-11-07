@@ -173,7 +173,8 @@ class FormController extends Controller
                 }
             }
             if (empty($rowNumber)) {
-                return ['message' => 'El registro a actualizar no fue encontrado en la hoja de cálculo.', 'HTTPcode' => 404];
+
+                return ['status' => 'fail','message' => 'El registro a actualizar no fue encontrado en la hoja de cálculo.', 'HTTPcode' => 404];
             }
 
             // 2. Construir el rango a actualizar. Ej: 'f!A5:X5'
@@ -227,7 +228,6 @@ class FormController extends Controller
         ];
         $validator = Validator::make($request->all(), $rules);
         if ($validator->fails()) {
-            // Si la validación falla, devuelve un JSON con los errores
             return response()->json([
                 'success' => false,
                 'message' => 'Falló la validación',
@@ -241,10 +241,10 @@ class FormController extends Controller
         $qry_gasconsumption_date = dpb_gasconsumption::where('gasconsumption_date', $validatedData['date']);
         $qry_gasconsumption_dateuser = dpb_gasconsumption::where('gasconsumption_date', $validatedData['date'])->where('gasconsumption_userid', $userId);
 
-        if ($qry_gasconsumption_dateuser->count() > 0) {
+        if ($qry_gasconsumption_dateuser->count() > 0 && $qry_gasconsumption_dateuser->first()->gasconsumption_status === 1) {
             return response()->json(['status' => 'fail', 'message' => 'Registro ya existe.'], 422);
         }
-        if ($qry_gasconsumption_date->count() > 0) {
+        if ($qry_gasconsumption_date->count() > 0 && $qry_gasconsumption_dateuser->first()->gasconsumption_status === 1) {
             $validatedData['databaseId'] = $qry_gasconsumption_date->first()->gasconsumption_id;
             return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData], 422);
         }
@@ -293,20 +293,28 @@ class FormController extends Controller
         $ans = $this->fillTable($this->sheet['gasConsumption'], $rowData, $m_gasconsumption->gasconsumption_id);
         return response()->json(['message' => $ans['message']], $ans['HTTPcode']);
     }
-    public function showGasConsumptionRecords()
+    public function showGasConsumptionRecords(Request $request)
     {
-        $sheetName = $this->sheet['gasConsumption'];
-        $spreadsheetId = config('google.sheet_id');
-        $limitRows = 30; // Límite de filas a mostrar
+        $filterDate = $request->input('filter_date', Carbon::now()->format('Y-m-d'));
+        $year = Carbon::parse($filterDate)->year;
+        $month = Carbon::parse($filterDate)->month;
 
-        $currentUser = Auth::user();
-        $currentUserId = $currentUser->id;
+        $query = dpb_gasconsumption::query();
 
-        $isAdmin = $currentUser->hasRole('Admin'); // Usando el método hasRole de Spatie/Laravel-Permission
+        if ($request->has('filter_date') && $request->input('filter_date')) {
+            $query->whereYear('gasconsumption_date', $year)
+                  ->whereMonth('gasconsumption_date', $month);
+        } else {
+            // Por defecto, mostrar el mes actual si no hay filtro
+            $query->whereYear('gasconsumption_date', Carbon::now()->year)
+                  ->whereMonth('gasconsumption_date', Carbon::now()->month);
+        }
 
+        $rs_gasConsumption = $query->orderBy('gasconsumption_status', 'DESC')
+                                   ->orderBy('gasconsumption_date', 'DESC')
+                                   ->join('users', 'users.id', 'dpb_gasconsumptions.gasconsumption_userid')
+                                   ->get();
         try {
-            $rs_gasConsumption = dpb_gasconsumption::ORDERBY('gasconsumption_status', 'DESC')->ORDERBY('gasconsumption_date', 'DESC')
-                ->JOIN('users', 'users.id', 'dpb_gasconsumptions.gasconsumption_userid')->LIMIT(30)->GET();
             $displayHeaders = [
                 'gasconsumption_date' => 'Fecha',
                 'name' => 'Usuario',
@@ -318,7 +326,7 @@ class FormController extends Controller
                 'gasconsumption_price' => 'Precio',
                 'gasconsumption_status' => 'Estado'
             ];
-            return view('forms.gasConsumption_records', compact('displayHeaders', 'rs_gasConsumption'));
+            return view('forms.gasConsumption_records', compact('displayHeaders', 'rs_gasConsumption', 'filterDate'));
         } catch (\Exception $e) {
             Log::error('Error al cargar registros: ' . $e->getMessage());
             return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
@@ -422,18 +430,6 @@ class FormController extends Controller
     }
 
 
-    protected $salesHeadersMap = [
-        16 => 'Creación',
-        23 => 'Fecha',
-        6 => 'Usuario',
-        1 => 'Corporativo',
-        3 => 'Ag. Nacional',
-        12 => 'Ag. Internacional',
-        8 => 'Callcenter',
-        10 => 'OTAs',
-        13 => 'Arenas',
-        19 => 'Pag. Web',
-    ];
     public function showSalesForm()
     {
         return view('forms.sales_partial');
@@ -677,67 +673,6 @@ class FormController extends Controller
             Log::error('Error al cargar registros: ' . $e->getMessage());
             return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
         }
-
-
-        /*
-
-
-
-            $currentUser = Auth::user();
-            $currentUserId = $currentUser->id;
-            $isAdmin = $currentUser->hasRole('Admin'); // O tu método para verificar admin
-
-
-
-
-
-
-
-
-            try {
-                $client = new Client();
-                $client->setAuthConfig(config('google.service_account_credentials_path'));
-                $client->addScope(Sheets::SPREADSHEETS_READONLY);
-                $service = new Sheets($client);
-
-                $fullRange = $sheetName . '!A:X';
-                $response = $service->spreadsheets_values->get($spreadsheetId, $fullRange);
-                $values = $response->getValues();
-
-                $displayHeaders = [];
-                $records = [];
-                $customHeadersMap = $this->salesHeadersMap;
-
-                foreach ($customHeadersMap as $colIndex => $customName) {
-                    $displayHeaders[$colIndex] = $customName;
-                }
-
-                if (!empty($values)) {
-                    array_shift($values); // Remueve la fila de encabezados
-                    $filteredRows = [];
-                    foreach ($values as $index => $row) {
-                        $rowUserId = $row[6] ?? null;
-
-                        if ($isAdmin || (string) $rowUserId === (string) $currentUserId) {
-                            $recordData = ['row_number_gs' => ($index + 2)];
-                            $recordData['data_cols'] = [];
-                            foreach ($displayHeaders as $colIndex => $headerName) {
-                                $recordData['data_cols'][$colIndex] = $row[$colIndex] ?? '';
-                            }
-                            $filteredRows[] = $recordData;
-                        }
-                    }
-                    $filteredRows = array_reverse($filteredRows);
-                    $records = array_slice($filteredRows, -$limitRows);
-                }
-
-                return view('forms.sales_records', compact('displayHeaders', 'records'));
-
-            } catch (\Exception $e) {
-                Log::error('Error al cargar registros de Ventas: ' . $e->getMessage());
-                return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
-            }
-        */
     }
     public function deleteSales(Request $request)
     {

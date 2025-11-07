@@ -196,6 +196,44 @@ var initializeGasConsumptionRecordsDeletion = function () {
     });
 };
 
+var initializeGasConsumptionRecordsFilter = function () {
+    const form = document.getElementById("gas-filter-form");
+    if (!form) return;
+
+    const formContainer = document.getElementById("form-content-container");
+
+    // Clonar para evitar listeners duplicados
+    const oldForm = form.cloneNode(true);
+    form.parentNode.replaceChild(oldForm, form);
+    const newForm = oldForm;
+
+    newForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        const formData = new FormData(newForm);
+        const params = new URLSearchParams(formData);
+        const formUrl = `${newForm.action}?${params.toString()}`;
+
+        formContainer.innerHTML = '<p class="text-center text-dark-navy">Cargando registros...</p>';
+
+        try {
+            const response = await fetch(formUrl, {
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                    Accept: "text/html",
+                },
+            });
+            const htmlContent = await response.text();
+            formContainer.innerHTML = htmlContent;
+            // Re-inicializar los listeners para la nueva tabla
+            initializeGasConsumptionRecordsDeletion();
+            initializeGasConsumptionRecordsFilter(); // Para que el filtro siga funcionando
+        } catch (error) {
+            console.error("Error al filtrar registros:", error);
+            toastIt("Error al cargar los registros: " + error.message, "error");
+        }
+    });
+};
+
 var initializeSalesForm = function () {
     const form = document.getElementById("salesForm");
     if (!form) return; // Si el formulario no está en el DOM, no hacer nada

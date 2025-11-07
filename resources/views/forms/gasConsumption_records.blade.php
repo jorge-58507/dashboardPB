@@ -1,7 +1,18 @@
 {{-- resources/views/forms/gas_consumption_records.blade.php --}} 
 
 <div class="bg-white p-6 rounded-lg shadow-lg">
-    <h2 class="text-2xl font-bold text-dark-navy mb-6">Registros de Consumo de Gas</h2>
+    <div class="flex justify-between items-center mb-6">
+        <h2 class="text-2xl font-bold text-dark-navy">Registros de Consumo de Gas</h2>
+        <form id="gas-filter-form" action="{{ route('formulario.gasConsumption.records') }}" method="GET">
+            <div class="flex items-center gap-2">
+                <input type="date" id="filter_date" name="filter_date" value="{{ $filterDate ?? \Carbon\Carbon::now()->format('Y-m-d') }}"
+                       class="shadow appearance-none border border-light-gray rounded py-2 px-3 text-dark-navy leading-tight focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-accent-blue">
+                <button type="submit" class="bg-accent-blue hover:bg-dark-navy text-white font-bold py-2 px-4 rounded">
+                    Filtrar
+                </button>
+            </div>
+        </form>
+    </div>
     @if(empty($rs_gasConsumption))
         <p class="text-gray-600">No hay registros de consumo de gas para mostrar.</p>
     @else
