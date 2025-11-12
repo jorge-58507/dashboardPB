@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 use App\Models\dpb_gasconsumption;
 use App\Models\dpb_sale;
+use App\Models\dpb_phonecall;
 
 // Importaciones para Google Sheets API
 use Google\Client;
@@ -237,14 +238,13 @@ class FormController extends Controller
         $validatedData = $validator->validated(); // Obtener los datos validados
 
         $userId = Auth::id();
-
-        $qry_gasconsumption_date = dpb_gasconsumption::where('gasconsumption_date', $validatedData['date']);
         $qry_gasconsumption_dateuser = dpb_gasconsumption::where('gasconsumption_date', $validatedData['date'])->where('gasconsumption_userid', $userId);
+        $qry_gasconsumption_date = dpb_gasconsumption::where('gasconsumption_date', $validatedData['date']);
 
         if ($qry_gasconsumption_dateuser->count() > 0 && $qry_gasconsumption_dateuser->first()->gasconsumption_status === 1) {
-            return response()->json(['status' => 'fail', 'message' => 'Registro ya existe.'], 422);
+            return response()->json(['status' => 'fail', 'message' => 'Registro ya existe.'], 422);                
         }
-        if ($qry_gasconsumption_date->count() > 0 && $qry_gasconsumption_dateuser->first()->gasconsumption_status === 1) {
+        if ($qry_gasconsumption_date->count() > 0 && $qry_gasconsumption_date->first()->gasconsumption_status === 1) {
             $validatedData['databaseId'] = $qry_gasconsumption_date->first()->gasconsumption_id;
             return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData], 422);
         }
@@ -310,10 +310,20 @@ class FormController extends Controller
                   ->whereMonth('gasconsumption_date', Carbon::now()->month);
         }
 
-        $rs_gasConsumption = $query->orderBy('gasconsumption_status', 'DESC')
-                                   ->orderBy('gasconsumption_date', 'DESC')
-                                   ->join('users', 'users.id', 'dpb_gasconsumptions.gasconsumption_userid')
-                                   ->get();
+        $currentUser = Auth::user();
+        $isAdmin = $currentUser->hasRole('Admin'); // Usando el método hasRole de Spatie/Laravel-Permission
+        if ($isAdmin) {
+            $rs_gasConsumption = $query->orderBy('gasconsumption_status', 'DESC')
+                                    ->orderBy('gasconsumption_date', 'DESC')
+                                    ->join('users', 'users.id', 'dpb_gasconsumptions.gasconsumption_userid')
+                                    ->get();                
+        }else{
+            $rs_gasConsumption = $query->orderBy('gasconsumption_status', 'DESC')
+                            ->orderBy('gasconsumption_date', 'DESC')
+                            ->join('users', 'users.id', 'dpb_gasconsumptions.gasconsumption_userid')
+                            ->where('dpb_gasconsumptions.gasconsumption_userid',$currentUser->id)
+                            ->get();
+        }
         try {
             $displayHeaders = [
                 'gasconsumption_date' => 'Fecha',
@@ -642,20 +652,36 @@ class FormController extends Controller
         }
     }
 
-    public function showSalesRecords()
+    public function showSalesRecords(Request $request)
     {
-        $sheetName = $this->sheet['sale'];
-        $spreadsheetId = config('google.sheet_id');
-        $limitRows = 30;
+        $filterDate = $request->input('filter_date', Carbon::now()->format('Y-m-d'));
+        $year = Carbon::parse($filterDate)->year;
+        $month = Carbon::parse($filterDate)->month;
+
+        $query = dpb_sale::query();
+
+        if ($request->has('filter_date') && $request->input('filter_date')) {
+            $query->whereYear('sale_date', $year)
+                  ->whereMonth('sale_date', $month);
+        } else {
+            $query->whereYear('sale_date', Carbon::now()->year)
+                  ->whereMonth('sale_date', Carbon::now()->month);
+        }
 
         $currentUser = Auth::user();
         $currentUserId = $currentUser->id;
-
         $isAdmin = $currentUser->hasRole('Admin'); // Usando el método hasRole de Spatie/Laravel-Permission
 
         try {
-            $records = dpb_sale::ORDERBY('sale_status', 'DESC')->ORDERBY('sale_date', 'DESC')
-                ->JOIN('users', 'users.id', 'dpb_sales.sale_userid')->LIMIT(30)->GET();
+            if ($isAdmin) {
+                $records = dpb_sale::ORDERBY('sale_status', 'DESC')->ORDERBY('sale_date', 'DESC')
+                    ->JOIN('users', 'users.id', 'dpb_sales.sale_userid')->GET();
+            } else {
+                $records = dpb_sale::ORDERBY('sale_status', 'DESC')->ORDERBY('sale_date', 'DESC')
+                ->where('dpb_sales.sale_userid',$currentUserId)
+                ->JOIN('users', 'users.id', 'dpb_sales.sale_userid')->GET();
+            }
+            
             $displayHeaders = [
                 'sale_date' => 'Fecha',
                 'name' => 'Usuario',
@@ -703,6 +729,243 @@ class FormController extends Controller
     }
 
 
+    // protected $phoneCallHeadersMap = [
+    //     3 => 'Usuario',
+    //     4 => 'Fecha',
+    //     6 => 'Cantidad',
+    //     8 => 'Ventas Logradas',
+    //     11 => 'Tiempo Prom',
+    //     13 => 'Creación',
+    // ];
+    public function showPhoneCallForm()
+    {
+        return view('forms.phonecall_partial');
+    }
+    public function submitPhoneCall(Request $request)
+    {
+        // 1. Validación de los datos
+        $validator = Validator::make($request->all(), [
+            'fechaRegistro' => ['required', 'date_format:Y-m-d', 'before_or_equal:' . Carbon::now()->format('Y-m-d')],
+            'cantidadLlamadas' => ['required', 'integer', 'min:0'],
+            'ventasLogradas' => ['required', 'integer', 'min:0'],
+            'tiempoPromedioLlamadas' => ['required', 'numeric', 'min:0'],
+        ], [
+            'fechaRegistro.required' => 'La fecha es obligatoria.',
+            'fechaRegistro.date_format' => 'El formato de la fecha no es válido (debe ser AAAA-MM-DD).',
+            'fechaRegistro.before_or_equal' => 'La fecha de registro no puede ser futura.',
+            'cantidadLlamadas.required' => 'La cantidad de llamadas es obligatoria.',
+            'cantidadLlamadas.integer' => 'La cantidad de llamadas debe ser un número entero.',
+            'cantidadLlamadas.min' => 'La cantidad de llamadas no puede ser negativa.',
+            'ventasLogradas.required' => 'La cantidad de ventas logradas es obligatoria.',
+            'ventasLogradas.integer' => 'Las ventas logradas deben ser un número entero.',
+            'ventasLogradas.min' => 'Las ventas logradas no pueden ser negativas.',
+            'tiempoPromedioLlamadas.required' => 'El tiempo promedio de llamadas es obligatorio.',
+            'tiempoPromedioLlamadas.numeric' => 'El tiempo promedio de llamadas debe ser un número.',
+            'tiempoPromedioLlamadas.min' => 'El tiempo promedio de llamadas no puede ser negativo.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation Failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $userId = Auth::id();
+        $qry_phonecall_dateuser = dpb_phonecall::where('phonecall_date', $validatedData['date'])->where('phonecall_userid', $userId);
+        $qry_phonecall_date = dpb_phonecall::where('phonecall_date', $validatedData['date']);
+
+        if ($qry_phonecall_dateuser->count() > 0 && $qry_phonecall_dateuser->first()->phonecall_status === 1) {
+            return response()->json(['status' => 'fail', 'message' => 'Registro ya existe.'], 422);                
+        }
+        if ($qry_phonecall_date->count() > 0 && $qry_phonecall_date->first()->phonecall_status === 1) {
+            $validatedData['databaseId'] = $qry_phonecall_date->first()->phonecall_id;
+            return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData], 204);
+        }
+
+        $m_gasconsumption = new dpb_gasconsumption;
+        $m_gasconsumption->gasconsumption_date = $validatedData['date'];
+        $m_gasconsumption->gasconsumption_userid = $userId;
+        $m_gasconsumption->gasconsumption_cala = $validatedData['cala'];
+        $m_gasconsumption->gasconsumption_laundry = $validatedData['lavanderia'];
+        $m_gasconsumption->gasconsumption_velero = $validatedData['velero'];
+        $m_gasconsumption->gasconsumption_kitchen = $validatedData['cocina'];
+        $m_gasconsumption->gasconsumption_hotwater = $validatedData['agua'];
+        $m_gasconsumption->gasconsumption_price = $gas_price;
+        $m_gasconsumption->gasconsumption_status = 1;
+        $m_gasconsumption->save();
+
+
+
+        $min = 15; // Valores de ejemplo para columnas de relleno
+        $max = 9999;
+        $timestampInsercion = Carbon::now()->toDateTimeString(); // Timestamp de la inserción
+        // Construcción de la fila de datos con 24 columnas
+        $rowData = [
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max), 
+            $userId,            
+            $request->input('fechaRegistro'),  
+            mt_rand($min, $max),
+            floatval($request->input('cantidadLlamadas')),
+            mt_rand($min, $max), 
+            floatval($request->input('ventasLogradas')), 
+            mt_rand($min, $max), 
+            mt_rand($min, $max), 
+            floatval($request->input('tiempoPromedioLlamadas')),
+            mt_rand($min, $max), 
+            $timestampInsercion, 
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+        ];
+
+        $ans = $this->fillTable('j', $rowData, $request->input('fechaRegistro'), $userId);
+
+        return response()->json([
+            'message' => $ans['message']
+        ], $ans['HTTPcode']);
+    }
+    public function showPhoneCallRecords()
+    {
+        // ¡IMPORTANTE! Confirma que 'Phone Call' es el nombre exacto de tu hoja de Llamadas
+        $sheetName = 'j';
+        $spreadsheetId = config('google.sheet_id');
+        $limitRows = 11;
+
+        $currentUser = Auth::user();
+        $currentUserId = $currentUser->id;
+        $isAdmin = $currentUser->hasRole('Admin'); // O tu método para verificar admin
+
+        try {
+            $client = new Client();
+            $client->setAuthConfig(config('google.service_account_credentials_path'));
+            $client->addScope(Sheets::SPREADSHEETS_READONLY);
+            $service = new Sheets($client);
+
+            // Ajusta 'A:G' si tus datos de llamadas ocupan más o menos columnas.
+            // La 'G' corresponde al índice 6 (Comentarios).
+            $fullRange = $sheetName . '!A:X';
+            $response = $service->spreadsheets_values->get($spreadsheetId, $fullRange);
+            $values = $response->getValues();
+
+            $displayHeaders = [];
+            $records = [];
+
+            // Usa el mapeo de encabezados específico para llamadas
+            $customHeadersMap = $this->phoneCallHeadersMap;
+
+            foreach ($customHeadersMap as $colIndex => $customName) {
+                $displayHeaders[$colIndex] = $customName;
+            }
+
+            if (!empty($values)) {
+                array_shift($values); // Remueve la fila de encabezados
+                $filteredRows = [];
+                foreach ($values as $index => $row) {
+                    $rowUserId = $row[0] ?? null; // Asume user_id está en la primera columna (índice 0)
+
+                    if ($isAdmin || (string) $rowUserId === (string) $currentUserId) {
+                        $recordData = ['row_number_gs' => ($index + 2)];
+                        $recordData['data_cols'] = [];
+                        foreach ($displayHeaders as $colIndex => $headerName) {
+                            $recordData['data_cols'][$colIndex] = $row[$colIndex] ?? '';
+                        }
+                        $filteredRows[] = $recordData;
+                    }
+                }
+                $filteredRows = array_reverse($filteredRows);
+                $records = array_slice($filteredRows, -$limitRows);
+            }
+
+            return view('forms.phonecall_records', compact('displayHeaders', 'records'));
+
+        } catch (\Exception $e) {
+            Log::error('Error al cargar registros de Llamadas: ' . $e->getMessage());
+            return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
+        }
+    }
+    public function deletePhoneCall(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'row_number' => ['required', 'integer', 'min:2'],
+        ], [
+            'row_number.required' => 'El número de fila es obligatorio para la eliminación.',
+            'row_number.integer' => 'El número de fila debe ser un número entero.',
+            'row_number.min' => 'No se puede eliminar la fila de encabezados.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation Failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $rowNumber = $request->input('row_number');
+        $sheetName = 'j';
+
+        try {
+            $client = new Client();
+            $client->setAuthConfig(config('google.service_account_credentials_path'));
+            $client->addScope(Sheets::SPREADSHEETS);
+            $service = new Sheets($client);
+            $spreadsheetId = config('google.sheet_id');
+
+            $targetSheetId = null;
+            $spreadsheet = $service->spreadsheets->get($spreadsheetId);
+            foreach ($spreadsheet->getSheets() as $sheet) {
+                if ($sheet->getProperties()->getTitle() === $sheetName) {
+                    $targetSheetId = $sheet->getProperties()->getSheetId();
+                    break;
+                }
+            }
+
+            if ($targetSheetId === null) {
+                throw new \Exception("La hoja '{$sheetName}' no fue encontrada en el Spreadsheet para eliminación.");
+            }
+
+            $deleteRequest = new DeleteDimensionRequest([
+                'range' => [
+                    'sheetId' => $targetSheetId,
+                    'dimension' => 'ROWS',
+                    'startIndex' => $rowNumber - 1,
+                    'endIndex' => $rowNumber
+                ]
+            ]);
+
+            $batchUpdateRequest = new BatchUpdateSpreadsheetRequest([
+                'requests' => [
+                    new SheetRequest([ // Usar el nombre de clase completo
+                        'deleteDimension' => $deleteRequest
+                    ])
+                ]
+            ]);
+
+            $result = $service->spreadsheets->batchUpdate($spreadsheetId, $batchUpdateRequest);
+
+            if ($result->getReplies() && count($result->getReplies()) > 0) {
+                Log::info('Fila eliminada con éxito de Llamadas:', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'user_id' => Auth::id()]);
+                return response()->json(['message' => 'Registro de Llamadas eliminado exitosamente.'], 200);
+            } else {
+                Log::error('Fallo al eliminar fila de Llamadas, no se obtuvo respuesta exitosa.', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'result' => $result, 'user_id' => Auth::id()]);
+                return response()->json(['message' => 'Hubo un problema al eliminar el registro de Llamadas.'], 500);
+            }
+
+        } catch (\Exception $e) {
+            Log::error('Error al eliminar registro de Llamadas: ' . $e->getMessage(), ['exception' => $e, 'user_id' => Auth::id()]);
+            return response()->json(['message' => 'Error en el servidor al comunicarse con Google Sheets.', 'error' => $e->getMessage()], 500);
+        }
+    }
+
 
     protected $laundryHeadersMap = [
         16 => 'Creación',
@@ -718,7 +981,6 @@ class FormController extends Controller
     }
     public function submitLaundry(Request $request) // <-- FUNCIÓN RENOMBRADA
     {
-        // ACTUALIZACIÓN: Reglas de validación para fechaInicio y fechaFin
         $validator = Validator::make($request->all(), [
             'totalGasto' => ['required', 'numeric', 'min:0'],
             'cantidadCiclos' => ['required', 'integer', 'min:0'],
@@ -1042,299 +1304,6 @@ class FormController extends Controller
         $result = $this->removeTable('l', $rowNumber);
         return response()->json(['message' => $result['message']], $result['HTTPcode']);
     }
-
-
-
-    protected $phoneCallHeadersMap = [
-        3 => 'Usuario',
-        4 => 'Fecha',
-        6 => 'Cantidad',
-        8 => 'Ventas Logradas',
-        11 => 'Tiempo Prom',
-        13 => 'Creación',
-    ];
-    public function showPhoneCallForm()
-    {
-        return view('forms.phonecall_partial');
-    }
-    public function submitPhoneCall(Request $request)
-    {
-        // 1. Validación de los datos
-        $validator = Validator::make($request->all(), [
-            'fechaRegistro' => ['required', 'date_format:Y-m-d', 'before_or_equal:' . Carbon::now()->format('Y-m-d')],
-            'cantidadLlamadas' => ['required', 'integer', 'min:0'],
-            'ventasLogradas' => ['required', 'integer', 'min:0'],
-            'tiempoPromedioLlamadas' => ['required', 'numeric', 'min:0'],
-        ], [
-            'fechaRegistro.required' => 'La fecha es obligatoria.',
-            'fechaRegistro.date_format' => 'El formato de la fecha no es válido (debe ser AAAA-MM-DD).',
-            'fechaRegistro.before_or_equal' => 'La fecha de registro no puede ser futura.',
-            'cantidadLlamadas.required' => 'La cantidad de llamadas es obligatoria.',
-            'cantidadLlamadas.integer' => 'La cantidad de llamadas debe ser un número entero.',
-            'cantidadLlamadas.min' => 'La cantidad de llamadas no puede ser negativa.',
-            'ventasLogradas.required' => 'La cantidad de ventas logradas es obligatoria.',
-            'ventasLogradas.integer' => 'Las ventas logradas deben ser un número entero.',
-            'ventasLogradas.min' => 'Las ventas logradas no pueden ser negativas.',
-            'tiempoPromedioLlamadas.required' => 'El tiempo promedio de llamadas es obligatorio.',
-            'tiempoPromedioLlamadas.numeric' => 'El tiempo promedio de llamadas debe ser un número.',
-            'tiempoPromedioLlamadas.min' => 'El tiempo promedio de llamadas no puede ser negativo.',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation Failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $min = 15; // Valores de ejemplo para columnas de relleno
-        $max = 9999;
-        $userId = Auth::id(); // ID del usuario autenticado
-        $timestampInsercion = Carbon::now()->toDateTimeString(); // Timestamp de la inserción
-
-        // Construcción de la fila de datos con 24 columnas (ajusta esto según tus necesidades exactas)
-        // !IMPORTANTE!: Debes mapear los índices de este array a las columnas REALES de tu hoja 'i'.
-        //              Los `mt_rand` son placeholders.
-        $rowData = [
-            mt_rand($min, $max), // Columna 1 (índice 0)
-            mt_rand($min, $max), // Columna 2 (índice 1)
-            mt_rand($min, $max), // Columna 3 (índice 2)
-            $userId,                       // Columna 4 (índice 3) - user_id
-            $request->input('fechaRegistro'),           // Columna 5 (índice 4) - fechaRegistro
-            mt_rand($min, $max), // Columna 6 (índice 5)
-            floatval($request->input('cantidadLlamadas')),        // Columna 7 (índice 6) - cantidadLlamadas
-            mt_rand($min, $max), // Columna 8 (índice 7)
-            floatval($request->input('ventasLogradas')),          // Columna 9 (índice 8) - ventasLogradas
-            mt_rand($min, $max), // Columna 10 (índice 9)
-            mt_rand($min, $max), // Columna 11 (índice 10)
-            floatval($request->input('tiempoPromedioLlamadas')), // Columna 12 (índice 11) - tiempoPromedioLlamadas
-            mt_rand($min, $max), // Columna 13 (índice 12)
-            $timestampInsercion, // Columna 14 (índice 13) - timestamp_insercion
-            mt_rand($min, $max), // Columna 15 (índice 14)
-            mt_rand($min, $max), // Columna 16 (índice 15)
-            mt_rand($min, $max), // Columna 17 (índice 16)
-            mt_rand($min, $max), // Columna 18 (índice 17)
-            mt_rand($min, $max), // Columna 19 (índice 18)
-            mt_rand($min, $max), // Columna 20 (índice 19)
-            mt_rand($min, $max), // Columna 21 (índice 20)
-            mt_rand($min, $max), // Columna 22 (índice 21)
-            mt_rand($min, $max), // Columna 23 (índice 22)
-            mt_rand($min, $max), // Columna 24 (índice 23)
-        ];
-
-        $ans = $this->fillTable('j', $rowData, $request->input('fechaRegistro'), $userId);
-
-        return response()->json([
-            'message' => $ans['message']
-        ], $ans['HTTPcode']);
-        /*
-        $values = [$rowData]; // La API espera un array de arrays para las filas
-
-        try {
-            // Configuración y envío a Google Sheets (usando la misma lógica que submitSales)
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS);
-            $service = new Sheets($client);
-            $spreadsheetId = config('google.sheet_id');
-            // Hoja de destino en Google Sheets para llamadas
-            // ¡IMPORTANTE! Asegúrate de que esta hoja exista y se llame 'i'.
-            $sheetName = 'j'; // <--- REEMPLAZA 'j' con el nombre real de tu hoja de Google Sheets para Inventario HK
-
-            // --- INICIO DE LA VERIFICACIÓN DE DUPLICADOS ---
-            $requestedDate = $request->input('fechaRegistro'); // La fecha que el usuario intenta registrar
-
-            // Rango para leer: Asume que el user_id está en la columna A y la fechaRegistro en la columna C
-            // Ajusta este rango si tus columnas para user_id y fechaRegistro están en otro lugar.
-            $readRange = $sheetName . '!D:E'; // Lee user_id (Col A), timestamp_insercion (Col B), fechaRegistro (Col C)
-            $response = $service->spreadsheets_values->get($spreadsheetId, $readRange);
-            $existingRows = $response->getValues();
-
-            if ($existingRows) {
-                // Ignora la fila de encabezados si existe (asume que la primera fila es de encabezados)
-                $dataRows = array_slice($existingRows, 1);
-
-                foreach ($dataRows as $row) {
-                    // !IMPORTANTE!: Ajusta los índices [0] y [2] según la posición REAL
-                    //              de user_id y fechaRegistro en tu Google Sheet.
-                    $existingUserId = $row[0] ?? null; // Columna A (índice 0)
-                    $existingDate = $row[1] ?? null;   // Columna C (índice 2)
-
-                    // Compara el user_id y la fecha (asegúrate de que los tipos de datos coincidan si es necesario)
-                    if ($existingUserId == $userId && $existingDate == $requestedDate) {
-                        Log::warning('Intento de registro duplicado de llamadas detectado.', [
-                            'user_id' => $userId,
-                            'fecha' => $requestedDate,
-                        ]);
-                        return response()->json([
-                            'message' => 'Ya existe un registro para esta fecha y usuario. No se permite duplicar.'
-                        ], 409); // 409 Conflict es un código HTTP apropiado para este error
-                    }
-                }
-            }
-            // --- FIN DE LA VERIFICACIÓN DE DUPLICADOS ---
-
-
-            $range = $sheetName . '!A2'; // Se añadirán datos a partir de la celda A2 en la hoja definida.
-
-            $body = new ValueRange([
-                'values' => $values
-            ]);
-
-            $params = [
-                'valueInputOption' => 'RAW'
-            ];
-
-            $result = $service->spreadsheets_values->append($spreadsheetId, $range, $body, $params);
-
-            // Manejo de la respuesta de la API y retorno de éxito/error
-            if ($result->getUpdates() && $result->getUpdates()->getUpdatedRows() > 0) {
-                Log::info('Rendimiento de llamadas registrado:', $request->all());
-                return response()->json(['message' => 'Rendimiento de llamadas registrado.'], 200);
-            } else {
-                Log::error('Fallo al añadir fila de registro de llamadas a Google Sheet, no se actualizaron filas.', ['result' => $result]);
-                return response()->json(['message' => 'Hubo un problema al guardar el reporte diario de llamadas.'], 500);
-            }
-
-        } catch (\Exception $e) {
-            Log::error('Error al guardar datos de registro de llamadas: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Error en el servidor al comunicarse con Google Sheets.', 'error' => $e->getMessage()], 500);
-        }
-        */
-    }
-    public function showPhoneCallRecords()
-    {
-        // ¡IMPORTANTE! Confirma que 'Phone Call' es el nombre exacto de tu hoja de Llamadas
-        $sheetName = 'j';
-        $spreadsheetId = config('google.sheet_id');
-        $limitRows = 11;
-
-        $currentUser = Auth::user();
-        $currentUserId = $currentUser->id;
-        $isAdmin = $currentUser->hasRole('Admin'); // O tu método para verificar admin
-
-        try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS_READONLY);
-            $service = new Sheets($client);
-
-            // Ajusta 'A:G' si tus datos de llamadas ocupan más o menos columnas.
-            // La 'G' corresponde al índice 6 (Comentarios).
-            $fullRange = $sheetName . '!A:X';
-            $response = $service->spreadsheets_values->get($spreadsheetId, $fullRange);
-            $values = $response->getValues();
-
-            $displayHeaders = [];
-            $records = [];
-
-            // Usa el mapeo de encabezados específico para llamadas
-            $customHeadersMap = $this->phoneCallHeadersMap;
-
-            foreach ($customHeadersMap as $colIndex => $customName) {
-                $displayHeaders[$colIndex] = $customName;
-            }
-
-            if (!empty($values)) {
-                array_shift($values); // Remueve la fila de encabezados
-                $filteredRows = [];
-                foreach ($values as $index => $row) {
-                    $rowUserId = $row[0] ?? null; // Asume user_id está en la primera columna (índice 0)
-
-                    if ($isAdmin || (string) $rowUserId === (string) $currentUserId) {
-                        $recordData = ['row_number_gs' => ($index + 2)];
-                        $recordData['data_cols'] = [];
-                        foreach ($displayHeaders as $colIndex => $headerName) {
-                            $recordData['data_cols'][$colIndex] = $row[$colIndex] ?? '';
-                        }
-                        $filteredRows[] = $recordData;
-                    }
-                }
-                $filteredRows = array_reverse($filteredRows);
-                $records = array_slice($filteredRows, -$limitRows);
-            }
-
-            return view('forms.phonecall_records', compact('displayHeaders', 'records'));
-
-        } catch (\Exception $e) {
-            Log::error('Error al cargar registros de Llamadas: ' . $e->getMessage());
-            return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
-        }
-    }
-    public function deletePhoneCall(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'row_number' => ['required', 'integer', 'min:2'],
-        ], [
-            'row_number.required' => 'El número de fila es obligatorio para la eliminación.',
-            'row_number.integer' => 'El número de fila debe ser un número entero.',
-            'row_number.min' => 'No se puede eliminar la fila de encabezados.',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation Failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $rowNumber = $request->input('row_number');
-        $sheetName = 'j';
-
-        try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS);
-            $service = new Sheets($client);
-            $spreadsheetId = config('google.sheet_id');
-
-            $targetSheetId = null;
-            $spreadsheet = $service->spreadsheets->get($spreadsheetId);
-            foreach ($spreadsheet->getSheets() as $sheet) {
-                if ($sheet->getProperties()->getTitle() === $sheetName) {
-                    $targetSheetId = $sheet->getProperties()->getSheetId();
-                    break;
-                }
-            }
-
-            if ($targetSheetId === null) {
-                throw new \Exception("La hoja '{$sheetName}' no fue encontrada en el Spreadsheet para eliminación.");
-            }
-
-            $deleteRequest = new DeleteDimensionRequest([
-                'range' => [
-                    'sheetId' => $targetSheetId,
-                    'dimension' => 'ROWS',
-                    'startIndex' => $rowNumber - 1,
-                    'endIndex' => $rowNumber
-                ]
-            ]);
-
-            $batchUpdateRequest = new BatchUpdateSpreadsheetRequest([
-                'requests' => [
-                    new SheetRequest([ // Usar el nombre de clase completo
-                        'deleteDimension' => $deleteRequest
-                    ])
-                ]
-            ]);
-
-            $result = $service->spreadsheets->batchUpdate($spreadsheetId, $batchUpdateRequest);
-
-            if ($result->getReplies() && count($result->getReplies()) > 0) {
-                Log::info('Fila eliminada con éxito de Llamadas:', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'user_id' => Auth::id()]);
-                return response()->json(['message' => 'Registro de Llamadas eliminado exitosamente.'], 200);
-            } else {
-                Log::error('Fallo al eliminar fila de Llamadas, no se obtuvo respuesta exitosa.', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'result' => $result, 'user_id' => Auth::id()]);
-                return response()->json(['message' => 'Hubo un problema al eliminar el registro de Llamadas.'], 500);
-            }
-
-        } catch (\Exception $e) {
-            Log::error('Error al eliminar registro de Llamadas: ' . $e->getMessage(), ['exception' => $e, 'user_id' => Auth::id()]);
-            return response()->json(['message' => 'Error en el servidor al comunicarse con Google Sheets.', 'error' => $e->getMessage()], 500);
-        }
-    }
-
-
 
 
     public function showInventoryHkForm()

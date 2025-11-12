@@ -170,12 +170,12 @@
                         // Inicializar el formulario correcto después de que se carga el HTML
                         if (formUrl === "{{ route('formulario.gas_consumption_partial') }}") {
                             initializeGasConsumptionForm();
-                        } else if (formUrl === "{{ route('formulario.laundry_partial') }}") {
-                            initializeLaundryForm();
                         } else if (formUrl === "{{ route('formulario.sales_partial') }}") {
                             initializeSalesForm();
                         } else if (formUrl === "{{ route('formulario.phonecall_partial') }}") {
                             initializePhoneCallForm();
+                        } else if (formUrl === "{{ route('formulario.laundry_partial') }}") {
+                            initializeLaundryForm();
                         } else if (formUrl === "{{ route('formulario.inventoryhk_partial') }}") { 
                             initializeInventoryHkForm();
                         } else if (formUrl === "{{ route('formulario.auditor_partial') }}") {
@@ -184,15 +184,16 @@
                         } else if (formUrl === "{{ route('formulario.gasConsumption.records') }}") { 
                             initializeGasConsumptionRecordsFilter();
                             initializeGasConsumptionRecordsDeletion();
-                        } else if (formUrl === "{{ route('formulario.inventoryhk.records') }}") {
+                        }else if (formUrl === "{{ route('formulario.sales.records') }}") {
+                            initializeSalesRecordsFilter();
+                            initializeSalesRecordsDeletion();
+                        }else if (formUrl === "{{ route('formulario.inventoryhk.records') }}") {
                             initializeInventoryHkRecordsDeletion();
                         }else if (formUrl === "{{ route('formulario.laundry.records') }}") {
                             initializeLaundryRecordsDeletion();
                         }else if (formUrl === "{{ route('formulario.phonecall.records') }}") {
                             initializePhoneCallRecordsDeletion();
-                        } else if (formUrl === "{{ route('formulario.sales.records') }}") {
-                            initializeSalesRecordsDeletion();
-                        } else if (formUrl === "{{ route('formulario.auditor.records') }}") {
+                        }else if (formUrl === "{{ route('formulario.auditor.records') }}") {
                             initializeAuditorRecordsDeletion();
                         }
                     } catch (error) {

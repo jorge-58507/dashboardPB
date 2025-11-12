@@ -318,28 +318,6 @@ var initializeSalesForm = function () {
                 newForm.reset();
                 toastIt(result.message, "success");
             }
-            if (response.ok) {
-                newForm.reset();
-                toastIt(result.message); // Usar toastIt directamente
-            } else {
-                let errorMessage =
-                    result.message || "Ocurrió un error inesperado.";
-
-                if (response.status === 422 && result.errors) {
-                    errorMessage =
-                        "Falló la validación. Por favor, revisa tus entradas.";
-                    for (const field in result.errors) {
-                        const errorElement = newForm.querySelector(
-                            `#error-${field}`
-                        );
-                        if (errorElement) {
-                            errorElement.textContent = result.errors[field][0];
-                            errorElement.classList.remove("hidden");
-                        }
-                    }
-                }
-                toastIt(errorMessage); // Usar toastIt directamente
-            }
         } catch (error) {
             console.error("Error:", error);
             toastIt("Error de conexión: " + error.message); // Usar toastIt directamente
@@ -403,6 +381,274 @@ var initializeSalesRecordsDeletion = function () {
                     button.disabled = false;
                     button.textContent = "Eliminar";
                 }
+            }
+        }
+    });
+};
+var initializeSalesRecordsFilter = function () {
+    const form = document.getElementById("sale-filter-form");
+    if (!form) return;
+
+    const formContainer = document.getElementById("form-content-container");
+
+    // Clonar para evitar listeners duplicados
+    const oldForm = form.cloneNode(true);
+    form.parentNode.replaceChild(oldForm, form);
+    const newForm = oldForm;
+
+    newForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        const formData = new FormData(newForm);
+        const params = new URLSearchParams(formData);
+        const formUrl = `${newForm.action}?${params.toString()}`;
+
+        formContainer.innerHTML = '<p class="text-center text-dark-navy">Cargando registros...</p>';
+
+        try {
+            const response = await fetch(formUrl, {
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                    Accept: "text/html",
+                },
+            });
+            const htmlContent = await response.text();
+            formContainer.innerHTML = htmlContent;
+            // Re-inicializar los listeners para la nueva tabla
+            initializeSalesRecordsDeletion();
+            initializeSalesRecordsFilter(); // Para que el filtro siga funcionando
+        } catch (error) {
+            console.error("Error al filtrar registros:", error);
+            toastIt("Error al cargar los registros: " + error.message, "error");
+        }
+    });
+};
+
+
+var initializePhoneCallForm = function () {
+    const form = document.getElementById("phoneCallForm");
+    if (!form) {
+        console.warn("Formulario 'phoneCallForm' no encontrado. No se puede inicializar.");
+        return; // Si el formulario no está en el DOM, no hacer nada
+    }
+    const formCsrfToken = document.querySelector('#phoneCallForm input[name="_token"]').value;
+
+    // Limpiar listeners viejos si el formulario ya existía (útil si se carga varias veces)
+    // Esto crea un clon del formulario y lo reemplaza para eliminar cualquier listener previo
+    const oldForm = form;
+    const newForm = oldForm.cloneNode(true);
+    oldForm.parentNode.replaceChild(newForm, oldForm);
+
+    enforceNumericInput("cantidadLlamadas", false); // Solo enteros
+    enforceNumericInput("ventasLogradas", false); // Solo enteros
+    enforceNumericInput("tiempoPromedioLlamadas", true); // Permitir decimales
+    // ---------------------------------------------------------------------
+
+    newForm.addEventListener("submit", async function (event) {
+        event.preventDefault(); // Evitar el envío por defecto
+        newForm
+            .querySelectorAll(".validation-error")
+            .forEach((el) => el.classList.add("hidden"));
+
+        const formData = new FormData(newForm);
+        const data = Object.fromEntries(formData.entries());
+
+        try {
+            const response = await fetch(newForm.action, {
+                method: "POST",
+                headers: {
+                    "X-CSRF-TOKEN": formCsrfToken,
+                    Accept: "application/json",
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(data),
+            });
+
+            const result = await response.json();
+            if (response.ok) {
+                if (result.status === "confirm") {
+                    const res = await Swal.fire({
+                        title: "Deseas actualizar el registro?",
+                        text: "No podrás revertir esta acción",
+                        icon: "warning",
+                        showCancelButton: true,
+                        confirmButtonColor: "#3085d6",
+                        cancelButtonColor: "#d33",
+                        confirmButtonText: "Sí, eliminar",
+                        cancelButtonText: "Cancelar",
+                    });
+
+                    if (res.isConfirmed) {
+                        const responseData = result.data;
+                        try {
+                            const response = await fetch(newForm.action, {
+                                method: "PUT",
+                                headers: {
+                                    "Content-Type": "application/json",
+                                    Accept: "application/json",
+                                    "X-CSRF-TOKEN": formCsrfToken,
+                                },
+                                body: JSON.stringify(responseData),
+                            });
+                            const ans = await response.json();
+                            if (ans.status === "success") {
+                                newForm.reset();
+                                toastIt(ans.message, "success");
+                            } else {
+                                const errorMessage =
+                                    ans.message ||
+                                    "Error al actualizar el registro.";
+                                toastIt(errorMessage, "error");
+                            }
+                        } catch (error) {
+                            console.error("Error al enviar la solicitud de eliminación:",error);
+                            toastIt("Error de conexión al eliminar gas: " +error.message,"error");
+                        }
+                    }
+                } else {
+                    newForm.reset();
+                    toastIt(result.message, "success");
+                }
+            }else{
+                let errorMessage = result.message || "Ocurrió un error inesperado.";
+                if (response.status === 422 && result.errors) {
+                    errorMessage = "Falló la validación. Por favor, revisa tus entradas.";
+                    for (const field in result.errors) {
+                        const errorElement = newForm.querySelector(
+                            `#error-${field}`
+                        );
+                        if (errorElement) {
+                            errorElement.textContent = result.errors[field][0];
+                            errorElement.classList.remove("hidden");
+                        }
+                    }
+                }
+                toastIt(errorMessage); // Usar toastIt directamente
+            }
+            // const result = await response.json();
+            // if (response.ok) {
+
+
+
+
+
+            //     newForm.reset();
+            //     toastIt(result.message); // Usar toastIt directamente
+            // } else {
+            //     let errorMessage = result.message || "Ocurrió un error inesperado.";
+            //     if (response.status === 422 && result.errors) {
+            //         errorMessage = "Falló la validación. Por favor, revisa tus entradas.";
+            //         for (const field in result.errors) {
+            //             const errorElement = newForm.querySelector(
+            //                 `#error-${field}`
+            //             );
+            //             if (errorElement) {
+            //                 errorElement.textContent = result.errors[field][0];
+            //                 errorElement.classList.remove("hidden");
+            //             }
+            //         }
+            //     }
+            //     toastIt(errorMessage); // Usar toastIt directamente
+            // }
+        } catch (error) {
+            console.error("Error al enviar el formulario de llamadas:", error);
+            formMessages.innerHTML = `
+                <div class="error-message">
+                    <p class="font-bold">Ocurrió un error al conectar con el servidor.</p>
+                    <p>${error.message}</p>
+                </div>
+            `;
+            toastIt("Error de conexión al enviar el formulario de llamadas: " +error.message);
+        }
+    });
+};
+var initializePhoneCallRecordsDeletion = function () {
+    const recordsContainer = document.getElementById("form-content-container");
+    if (!recordsContainer) {
+        console.warn(
+            "Contenedor de registros no encontrado. No se puede inicializar la eliminación de llamadas."
+        );
+        return;
+    }
+
+    const formMessages = document.getElementById("records-messages");
+
+    recordsContainer.addEventListener("click", async function (event) {
+        // Buscamos la clase específica para Llamadas: 'delete-phonecall-record'
+        if (event.target.classList.contains("delete-phonecall-record")) {
+            const button = event.target;
+            const rowNumber = button.dataset.rowNumber;
+
+            if (
+                !confirm(
+                    `¿Estás seguro de que quieres eliminar el registro de llamadas de la fila ${rowNumber}? Esta acción es irreversible.`
+                )
+            ) {
+                return;
+            }
+
+            formMessages.innerHTML = "";
+            button.disabled = true;
+            button.textContent = "Eliminando...";
+
+            try {
+                // Usamos la URL directa para la ruta de eliminación de llamadas
+                const response = await fetch("/formulario/delete-phonecall", {
+                    method: "DELETE",
+                    headers: {
+                        "X-CSRF-TOKEN": document
+                            .querySelector('meta[name="csrf-token"]')
+                            .getAttribute("content"),
+                        Accept: "application/json",
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ row_number: rowNumber }),
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    toastIt(result.message, "success");
+                    // Eliminar la fila visualmente, usando el ID específico de llamadas
+                    const rowElement = document.getElementById(
+                        `row-phonecall-${rowNumber}`
+                    );
+                    if (rowElement) {
+                        rowElement.remove();
+                    }
+                    formMessages.innerHTML = `
+                        <div class="success-message">
+                            ${result.message}
+                        </div>
+                    `;
+                } else {
+                    let errorMessage =
+                        result.message ||
+                        "Error al eliminar el registro de llamadas.";
+                    toastIt(errorMessage, "error");
+                    formMessages.innerHTML = `
+                        <div class="error-message">
+                            <p class="font-bold">${errorMessage}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error(
+                    "Error al enviar la solicitud de eliminación de llamadas:",
+                    error
+                );
+                toastIt(
+                    "Error de conexión al eliminar llamadas: " + error.message,
+                    "error"
+                );
+                formMessages.innerHTML = `
+                    <div class="error-message">
+                        <p class="font-bold">Ocurrió un error al conectar con el servidor.</p>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            } finally {
+                button.disabled = false;
+                button.textContent = "Eliminar";
             }
         }
     });
@@ -582,197 +828,6 @@ var initializeLaundryRecordsDeletion = function () {
     });
 };
 
-
-var initializePhoneCallForm = function () {
-    const form = document.getElementById("phoneCallForm");
-    if (!form) {
-        console.warn(
-            "Formulario 'phoneCallForm' no encontrado. No se puede inicializar."
-        );
-        return; // Si el formulario no está en el DOM, no hacer nada
-    }
-
-    const formMessages = document.getElementById("form-messages");
-    const formCsrfToken = document.querySelector(
-        '#phoneCallForm input[name="_token"]'
-    ).value;
-
-    // Limpiar listeners viejos si el formulario ya existía (útil si se carga varias veces)
-    // Esto crea un clon del formulario y lo reemplaza para eliminar cualquier listener previo
-    const oldForm = form;
-    const newForm = oldForm.cloneNode(true);
-    oldForm.parentNode.replaceChild(newForm, oldForm);
-
-    // --- LLAMADAS PARA RESTRINGIR LA ENTRADA NUMÉRICA EN ESTE FORMULARIO ---
-    // Los IDs de los campos deben coincidir con los de phonecall_partial.blade.php
-    enforceNumericInput("cantidadLlamadas", false); // Solo enteros
-    enforceNumericInput("ventasLogradas", false); // Solo enteros
-    enforceNumericInput("tiempoPromedioLlamadas", true); // Permitir decimales
-    // ---------------------------------------------------------------------
-
-    newForm.addEventListener("submit", async function (event) {
-        event.preventDefault(); // Evitar el envío por defecto
-        formMessages.innerHTML = "";
-        newForm
-            .querySelectorAll(".validation-error")
-            .forEach((el) => el.classList.add("hidden"));
-
-        const formData = new FormData(newForm);
-        const data = Object.fromEntries(formData.entries());
-
-        try {
-            const response = await fetch(newForm.action, {
-                method: "POST",
-                headers: {
-                    "X-CSRF-TOKEN": formCsrfToken,
-                    Accept: "application/json",
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify(data),
-            });
-
-            const result = await response.json();
-
-            if (response.ok) {
-                formMessages.innerHTML = `
-                    <div class="success-message">
-                        ${result.message}
-                    </div>
-                `;
-                newForm.reset();
-                toastIt(result.message); // Usar toastIt directamente
-            } else {
-                let errorMessage =
-                    result.message || "Ocurrió un error inesperado.";
-
-                if (response.status === 422 && result.errors) {
-                    errorMessage =
-                        "Falló la validación. Por favor, revisa tus entradas.";
-                    for (const field in result.errors) {
-                        const errorElement = newForm.querySelector(
-                            `#error-${field}`
-                        );
-                        if (errorElement) {
-                            errorElement.textContent = result.errors[field][0];
-                            errorElement.classList.remove("hidden");
-                        }
-                    }
-                }
-
-                formMessages.innerHTML = `
-                    <div class="error-message">
-                        <p class="font-bold">${errorMessage}</p>
-                    </div>
-                `;
-                toastIt(errorMessage); // Usar toastIt directamente
-            }
-        } catch (error) {
-            console.error("Error al enviar el formulario de llamadas:", error);
-            formMessages.innerHTML = `
-                <div class="error-message">
-                    <p class="font-bold">Ocurrió un error al conectar con el servidor.</p>
-                    <p>${error.message}</p>
-                </div>
-            `;
-            toastIt(
-                "Error de conexión al enviar el formulario de llamadas: " +
-                    error.message
-            );
-        }
-    });
-};
-var initializePhoneCallRecordsDeletion = function () {
-    const recordsContainer = document.getElementById("form-content-container");
-    if (!recordsContainer) {
-        console.warn(
-            "Contenedor de registros no encontrado. No se puede inicializar la eliminación de llamadas."
-        );
-        return;
-    }
-
-    const formMessages = document.getElementById("records-messages");
-
-    recordsContainer.addEventListener("click", async function (event) {
-        // Buscamos la clase específica para Llamadas: 'delete-phonecall-record'
-        if (event.target.classList.contains("delete-phonecall-record")) {
-            const button = event.target;
-            const rowNumber = button.dataset.rowNumber;
-
-            if (
-                !confirm(
-                    `¿Estás seguro de que quieres eliminar el registro de llamadas de la fila ${rowNumber}? Esta acción es irreversible.`
-                )
-            ) {
-                return;
-            }
-
-            formMessages.innerHTML = "";
-            button.disabled = true;
-            button.textContent = "Eliminando...";
-
-            try {
-                // Usamos la URL directa para la ruta de eliminación de llamadas
-                const response = await fetch("/formulario/delete-phonecall", {
-                    method: "DELETE",
-                    headers: {
-                        "X-CSRF-TOKEN": document
-                            .querySelector('meta[name="csrf-token"]')
-                            .getAttribute("content"),
-                        Accept: "application/json",
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ row_number: rowNumber }),
-                });
-
-                const result = await response.json();
-
-                if (response.ok) {
-                    toastIt(result.message, "success");
-                    // Eliminar la fila visualmente, usando el ID específico de llamadas
-                    const rowElement = document.getElementById(
-                        `row-phonecall-${rowNumber}`
-                    );
-                    if (rowElement) {
-                        rowElement.remove();
-                    }
-                    formMessages.innerHTML = `
-                        <div class="success-message">
-                            ${result.message}
-                        </div>
-                    `;
-                } else {
-                    let errorMessage =
-                        result.message ||
-                        "Error al eliminar el registro de llamadas.";
-                    toastIt(errorMessage, "error");
-                    formMessages.innerHTML = `
-                        <div class="error-message">
-                            <p class="font-bold">${errorMessage}</p>
-                        </div>
-                    `;
-                }
-            } catch (error) {
-                console.error(
-                    "Error al enviar la solicitud de eliminación de llamadas:",
-                    error
-                );
-                toastIt(
-                    "Error de conexión al eliminar llamadas: " + error.message,
-                    "error"
-                );
-                formMessages.innerHTML = `
-                    <div class="error-message">
-                        <p class="font-bold">Ocurrió un error al conectar con el servidor.</p>
-                        <p>${error.message}</p>
-                    </div>
-                `;
-            } finally {
-                button.disabled = false;
-                button.textContent = "Eliminar";
-            }
-        }
-    });
-};
 
 var initializeInventoryHkForm = function () {
     const form = document.getElementById("inventoryHkForm");
