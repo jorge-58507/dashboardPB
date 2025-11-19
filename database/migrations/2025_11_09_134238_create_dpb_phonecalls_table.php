@@ -20,6 +20,7 @@ return new class extends Migration
             $table->integer('phonecall_quantity');
             $table->integer('phonecall_success');
             $table->float('phonecall_average');
+            $table->integer('phonecall_status');
             $table->timestamps();
         });
     }

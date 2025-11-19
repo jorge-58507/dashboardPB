@@ -2,7 +2,7 @@
 -para los usuarios de gas, poder modificar el precio del gas desde la modificacion de su perfil
 -Crear rol del auditor para el registro de los ingresos por a&b y Otros
 -Si la fecha de un registro coincide pero el usuario no, preguntar si desea sobrescribirlo
-
+-Que sucede si un registro existe en el excel pero no en la BD y lo agregan a la BD
 
 
 

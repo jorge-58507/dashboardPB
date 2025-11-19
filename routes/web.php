@@ -58,7 +58,6 @@ Route::middleware('auth')->group(function () {
             ->name('sales.submit');
         Route::put('/submit-sales', [FormController::class, 'updateSales'])
             ->middleware(['role:Admin|Ventas']);
-
         Route::get('/sales-records', [FormController::class, 'showSalesRecords'])
             ->middleware(['role:Admin|Ventas'])
             ->name('sales.records');
@@ -69,9 +68,9 @@ Route::middleware('auth')->group(function () {
         // Rutas para Lavandería
         Route::get('/laundry-partial', [FormController::class, 'showLaundryForm'])
             ->name('laundry_partial');
-        Route::post('/submit-laundry', [FormController::class, 'submitLaundry']) // Nombre de URI más consistente
+        Route::post('/submit-laundry', [FormController::class, 'submitLaundry'])
             ->middleware(['role:Admin|Lavanderia|Housekeeping'])
-            ->name('laundry.submit'); // Nombre de ruta simplificado
+            ->name('laundry.submit');
         Route::get('/laundry-records', [FormController::class, 'showLaundryRecords'])
             ->middleware(['role:Admin|Lavanderia|Housekeeping'])
             ->name('laundry.records');

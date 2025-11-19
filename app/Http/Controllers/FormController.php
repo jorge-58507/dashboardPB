@@ -29,7 +29,8 @@ class FormController extends Controller
     // GUARDAR EN LA BD Y LUEGO EN LA TABLA
     protected $sheet = [
         'gasConsumption' => 'f',
-        'sale' => 'h'
+        'sale' => 'h',
+        'phonecall' => 'j'
     ];
     public function fillTable($sheetName, $rowData, $databaseId)
     {
@@ -674,12 +675,13 @@ class FormController extends Controller
 
         try {
             if ($isAdmin) {
-                $records = dpb_sale::ORDERBY('sale_status', 'DESC')->ORDERBY('sale_date', 'DESC')
+                $records = $query->ORDERBY('sale_status', 'DESC')->ORDERBY('sale_date', 'DESC')
                     ->JOIN('users', 'users.id', 'dpb_sales.sale_userid')->GET();
             } else {
-                $records = dpb_sale::ORDERBY('sale_status', 'DESC')->ORDERBY('sale_date', 'DESC')
+                $records = $query->ORDERBY('sale_status', 'DESC')->ORDERBY('sale_date', 'DESC')
                 ->where('dpb_sales.sale_userid',$currentUserId)
                 ->JOIN('users', 'users.id', 'dpb_sales.sale_userid')->GET();
+
             }
             
             $displayHeaders = [
@@ -707,7 +709,7 @@ class FormController extends Controller
         ], [
             'sale_id.required' => 'El número de fila es obligatorio para la eliminación.',
             'sale_id.integer' => 'El número de fila debe ser un número entero.',
-            'sale_id.min' => 'No se puede eliminar la fila de encabezados.',
+            'sale_id.min' => 'No se puede eliminar la fila 0.',
         ]);
 
         if ($validator->fails()) {
@@ -723,20 +725,11 @@ class FormController extends Controller
         $rs_sale->sale_status = 0;
         $rs_sale->save();
 
-        $rowNumber = $request->input('sale_id');
         $result = $this->removeTable($this->sheet['sale'], $sale_id);
         return response()->json(['message' => $result['message']], $result['HTTPcode']);
     }
 
 
-    // protected $phoneCallHeadersMap = [
-    //     3 => 'Usuario',
-    //     4 => 'Fecha',
-    //     6 => 'Cantidad',
-    //     8 => 'Ventas Logradas',
-    //     11 => 'Tiempo Prom',
-    //     13 => 'Creación',
-    // ];
     public function showPhoneCallForm()
     {
         return view('forms.phonecall_partial');
@@ -771,9 +764,11 @@ class FormController extends Controller
             ], 422);
         }
 
+        $validatedData = $validator->validated();
         $userId = Auth::id();
-        $qry_phonecall_dateuser = dpb_phonecall::where('phonecall_date', $validatedData['date'])->where('phonecall_userid', $userId);
-        $qry_phonecall_date = dpb_phonecall::where('phonecall_date', $validatedData['date']);
+
+        $qry_phonecall_dateuser = dpb_phonecall::where('phonecall_date', $validatedData['fechaRegistro'])->where('phonecall_userid', $userId);
+        $qry_phonecall_date = dpb_phonecall::where('phonecall_date', $validatedData['fechaRegistro']);
 
         if ($qry_phonecall_dateuser->count() > 0 && $qry_phonecall_dateuser->first()->phonecall_status === 1) {
             return response()->json(['status' => 'fail', 'message' => 'Registro ya existe.'], 422);                
@@ -783,24 +778,18 @@ class FormController extends Controller
             return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData], 204);
         }
 
-        $m_gasconsumption = new dpb_gasconsumption;
-        $m_gasconsumption->gasconsumption_date = $validatedData['date'];
-        $m_gasconsumption->gasconsumption_userid = $userId;
-        $m_gasconsumption->gasconsumption_cala = $validatedData['cala'];
-        $m_gasconsumption->gasconsumption_laundry = $validatedData['lavanderia'];
-        $m_gasconsumption->gasconsumption_velero = $validatedData['velero'];
-        $m_gasconsumption->gasconsumption_kitchen = $validatedData['cocina'];
-        $m_gasconsumption->gasconsumption_hotwater = $validatedData['agua'];
-        $m_gasconsumption->gasconsumption_price = $gas_price;
-        $m_gasconsumption->gasconsumption_status = 1;
-        $m_gasconsumption->save();
+        $m_phonecall = new dpb_phonecall;
+        $m_phonecall->phonecall_date = $validatedData['fechaRegistro'];
+        $m_phonecall->phonecall_userid = $userId;
+        $m_phonecall->phonecall_quantity = $validatedData['cantidadLlamadas'];
+        $m_phonecall->phonecall_success = $validatedData['ventasLogradas'];
+        $m_phonecall->phonecall_average = $validatedData['tiempoPromedioLlamadas'];
+        $m_phonecall->phonecall_status = 1;
+        $m_phonecall->save();
 
-
-
-        $min = 15; // Valores de ejemplo para columnas de relleno
+        $min = 15;
         $max = 9999;
-        $timestampInsercion = Carbon::now()->toDateTimeString(); // Timestamp de la inserción
-        // Construcción de la fila de datos con 24 columnas
+        $timestampInsercion = Carbon::now()->toDateTimeString();
         $rowData = [
             mt_rand($min, $max),
             mt_rand($min, $max),
@@ -825,69 +814,59 @@ class FormController extends Controller
             mt_rand($min, $max),
             mt_rand($min, $max),
             mt_rand($min, $max),
-            mt_rand($min, $max),
+            $m_phonecall->phonecall_id
         ];
 
-        $ans = $this->fillTable('j', $rowData, $request->input('fechaRegistro'), $userId);
+        $ans = $this->fillTable($this->sheet['phonecall'], $rowData, $m_phonecall->phonecall_id);
 
         return response()->json([
             'message' => $ans['message']
         ], $ans['HTTPcode']);
     }
-    public function showPhoneCallRecords()
+    public function showPhoneCallRecords(Request $request)
     {
-        // ¡IMPORTANTE! Confirma que 'Phone Call' es el nombre exacto de tu hoja de Llamadas
-        $sheetName = 'j';
+
+        $filterDate = $request->input('filter_date', Carbon::now()->format('Y-m-d'));
+        $year = Carbon::parse($filterDate)->year;
+        $month = Carbon::parse($filterDate)->month;
+
+        $query = dpb_phonecall::query();
+
+        if ($request->has('filter_date') && $request->input('filter_date')) {
+            $query->whereYear('phonecall_date', $year)
+                  ->whereMonth('phonecall_date', $month);
+        } else {
+            $query->whereYear('phonecall_date', Carbon::now()->year)
+                  ->whereMonth('phonecall_date', Carbon::now()->month);
+        }
+
+
+        $sheetName = $this->sheet['phonecall'];
         $spreadsheetId = config('google.sheet_id');
-        $limitRows = 11;
 
         $currentUser = Auth::user();
         $currentUserId = $currentUser->id;
-        $isAdmin = $currentUser->hasRole('Admin'); // O tu método para verificar admin
+        $isAdmin = $currentUser->hasRole('Admin');
 
         try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS_READONLY);
-            $service = new Sheets($client);
-
-            // Ajusta 'A:G' si tus datos de llamadas ocupan más o menos columnas.
-            // La 'G' corresponde al índice 6 (Comentarios).
-            $fullRange = $sheetName . '!A:X';
-            $response = $service->spreadsheets_values->get($spreadsheetId, $fullRange);
-            $values = $response->getValues();
-
-            $displayHeaders = [];
-            $records = [];
-
-            // Usa el mapeo de encabezados específico para llamadas
-            $customHeadersMap = $this->phoneCallHeadersMap;
-
-            foreach ($customHeadersMap as $colIndex => $customName) {
-                $displayHeaders[$colIndex] = $customName;
+            if ($isAdmin) {
+                $records = $query->ORDERBY('phonecall_status', 'DESC')->ORDERBY('phonecall_date', 'DESC')
+                    ->JOIN('users', 'users.id', 'dpb_phonecalls.phonecall_userid')->GET();
+            } else {
+                $records = $query->ORDERBY('phonecall_status', 'DESC')->ORDERBY('phonecall_date', 'DESC')
+                ->where('dpb_phonecalls.phonecall_userid',$currentUserId)
+                ->JOIN('users', 'users.id', 'dpb_phonecalls.phonecall_userid')->GET();
             }
-
-            if (!empty($values)) {
-                array_shift($values); // Remueve la fila de encabezados
-                $filteredRows = [];
-                foreach ($values as $index => $row) {
-                    $rowUserId = $row[0] ?? null; // Asume user_id está en la primera columna (índice 0)
-
-                    if ($isAdmin || (string) $rowUserId === (string) $currentUserId) {
-                        $recordData = ['row_number_gs' => ($index + 2)];
-                        $recordData['data_cols'] = [];
-                        foreach ($displayHeaders as $colIndex => $headerName) {
-                            $recordData['data_cols'][$colIndex] = $row[$colIndex] ?? '';
-                        }
-                        $filteredRows[] = $recordData;
-                    }
-                }
-                $filteredRows = array_reverse($filteredRows);
-                $records = array_slice($filteredRows, -$limitRows);
-            }
-
+            
+            $displayHeaders = [
+                'phonecall_date' => 'Fecha',
+                'name' => 'Usuario',
+                'phonecall_quantity' => 'Cantidad',
+                'phonecall_success' => 'Vnt. Logradas',
+                'phonecall_average' => 'T. Promedio',
+                'phonecall_status' => 'Estado'
+            ];
             return view('forms.phonecall_records', compact('displayHeaders', 'records'));
-
         } catch (\Exception $e) {
             Log::error('Error al cargar registros de Llamadas: ' . $e->getMessage());
             return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
@@ -896,13 +875,12 @@ class FormController extends Controller
     public function deletePhoneCall(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'row_number' => ['required', 'integer', 'min:2'],
+            'id' => ['required', 'integer', 'min:1'],
         ], [
-            'row_number.required' => 'El número de fila es obligatorio para la eliminación.',
-            'row_number.integer' => 'El número de fila debe ser un número entero.',
-            'row_number.min' => 'No se puede eliminar la fila de encabezados.',
+            'id.required' => 'El número de fila es obligatorio para la eliminación.',
+            'id.integer' => 'El número de fila debe ser un número entero.',
+            'id.min' => 'No existe el registro en ese rango.',
         ]);
-
         if ($validator->fails()) {
             return response()->json([
                 'message' => 'Validation Failed',
@@ -910,76 +888,23 @@ class FormController extends Controller
             ], 422);
         }
 
-        $rowNumber = $request->input('row_number');
-        $sheetName = 'j';
+        $id = $request->input('id');
 
-        try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS);
-            $service = new Sheets($client);
-            $spreadsheetId = config('google.sheet_id');
+        $rs_phonecall = dpb_phonecall::find($id);
+        $rs_phonecall->phonecall_status = 0;
+        $rs_phonecall->save();
 
-            $targetSheetId = null;
-            $spreadsheet = $service->spreadsheets->get($spreadsheetId);
-            foreach ($spreadsheet->getSheets() as $sheet) {
-                if ($sheet->getProperties()->getTitle() === $sheetName) {
-                    $targetSheetId = $sheet->getProperties()->getSheetId();
-                    break;
-                }
-            }
-
-            if ($targetSheetId === null) {
-                throw new \Exception("La hoja '{$sheetName}' no fue encontrada en el Spreadsheet para eliminación.");
-            }
-
-            $deleteRequest = new DeleteDimensionRequest([
-                'range' => [
-                    'sheetId' => $targetSheetId,
-                    'dimension' => 'ROWS',
-                    'startIndex' => $rowNumber - 1,
-                    'endIndex' => $rowNumber
-                ]
-            ]);
-
-            $batchUpdateRequest = new BatchUpdateSpreadsheetRequest([
-                'requests' => [
-                    new SheetRequest([ // Usar el nombre de clase completo
-                        'deleteDimension' => $deleteRequest
-                    ])
-                ]
-            ]);
-
-            $result = $service->spreadsheets->batchUpdate($spreadsheetId, $batchUpdateRequest);
-
-            if ($result->getReplies() && count($result->getReplies()) > 0) {
-                Log::info('Fila eliminada con éxito de Llamadas:', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'user_id' => Auth::id()]);
-                return response()->json(['message' => 'Registro de Llamadas eliminado exitosamente.'], 200);
-            } else {
-                Log::error('Fallo al eliminar fila de Llamadas, no se obtuvo respuesta exitosa.', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'result' => $result, 'user_id' => Auth::id()]);
-                return response()->json(['message' => 'Hubo un problema al eliminar el registro de Llamadas.'], 500);
-            }
-
-        } catch (\Exception $e) {
-            Log::error('Error al eliminar registro de Llamadas: ' . $e->getMessage(), ['exception' => $e, 'user_id' => Auth::id()]);
-            return response()->json(['message' => 'Error en el servidor al comunicarse con Google Sheets.', 'error' => $e->getMessage()], 500);
-        }
+        $sheetName = $this->sheet['phonecall'];
+        $result = $this->removeTable($sheetName, $id);
+        return response()->json(['message' => $result['message']], $result['HTTPcode']);
     }
 
 
-    protected $laundryHeadersMap = [
-        16 => 'Creación',
-        4 => 'Usuario',
-        8 => 'Fecha Inicio',
-        20 => 'Fecha Final',
-        14 => 'Total Gasto',
-        19 => 'Cantidad de Ciclos',
-    ];
     public function showLaundryForm()
     {
         return view('forms.laundry_partial');
     }
-    public function submitLaundry(Request $request) // <-- FUNCIÓN RENOMBRADA
+    public function submitLaundry(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'totalGasto' => ['required', 'numeric', 'min:0'],
@@ -993,14 +918,13 @@ class FormController extends Controller
             'cantidadCiclos.required' => 'El campo Cantidad de Ciclos es obligatorio.',
             'cantidadCiclos.integer' => 'El campo Cantidad de Ciclos debe ser un número entero.',
             'cantidadCiclos.min' => 'El campo Cantidad de Ciclos no puede ser negativo.',
-            'fechaInicio.required' => 'El campo Fecha de Inicio es obligatorio.', // NUEVO MENSAJE
-            'fechaInicio.date' => 'El campo Fecha de Inicio debe ser una fecha válida.', // NUEVO MENSAJE
-            'fechaFin.required' => 'El campo Fecha de Fin es obligatorio.', // MENSAJE ACTUALIZADO
-            'fechaFin.date' => 'El campo Fecha de Fin debe ser una fecha válida.', // MENSAJE ACTUALIZADO
-            'fechaFin.after_or_equal' => 'La Fecha de Fin debe ser igual o posterior a la Fecha de Inicio.', // NUEVO MENSAJE
+            'fechaInicio.required' => 'El campo Fecha de Inicio es obligatorio.',
+            'fechaInicio.date' => 'El campo Fecha de Inicio debe ser una fecha válida.',
+            'fechaFin.required' => 'El campo Fecha de Fin es obligatorio.',
+            'fechaFin.date' => 'El campo Fecha de Fin debe ser una fecha válida.',
+            'fechaFin.after_or_equal' => 'La Fecha de Fin debe ser igual o posterior a la Fecha de Inicio.',
             'fechaFin.before_or_equal' => 'La Fecha de Fin no puede ser mayor a la fecha actual.',
         ]);
-
         if ($validator->fails()) {
             return response()->json([
                 'message' => 'Validation Failed',
@@ -1008,9 +932,12 @@ class FormController extends Controller
             ], 422);
         }
 
+        $validatedData = $validator->validated();
+
+
+
         $min = 15;
         $max = 9999;
-
         $rowData = [
             mt_rand($min, $max), // Columna 1
             mt_rand($min, $max), // Columna 2
@@ -1035,44 +962,44 @@ class FormController extends Controller
             $request->input('fechaFin'), // <-- NUEVO CAMPO: Fecha de Fin (columna 21)
             mt_rand($min, $max), // Columna 22
             mt_rand($min, $max), // Columna 23
-            mt_rand($min, $max), // Columna 24
+            $m_laundry->laundry_id
         ];
 
         $values = [$rowData];
+        /*
+            try {
+                $client = new Client();
+                $client->setAuthConfig(config('google.service_account_credentials_path'));
+                $client->addScope(Sheets::SPREADSHEETS);
 
-        try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS);
+                $service = new Sheets($client);
 
-            $service = new Sheets($client);
+                $spreadsheetId = config('google.sheet_id');
+                $range = 'g!A2';
 
-            $spreadsheetId = config('google.sheet_id');
-            $range = 'g!A2';
+                $body = new ValueRange([
+                    'values' => $values
+                ]);
 
-            $body = new ValueRange([
-                'values' => $values
-            ]);
+                $params = [
+                    'valueInputOption' => 'RAW'
+                ];
 
-            $params = [
-                'valueInputOption' => 'RAW'
-            ];
+                $result = $service->spreadsheets_values->append($spreadsheetId, $range, $body, $params);
 
-            $result = $service->spreadsheets_values->append($spreadsheetId, $range, $body, $params);
+                if ($result->getUpdates() && $result->getUpdates()->getUpdatedRows() > 0) {
+                    return response()->json(['message' => 'Información enviada correctamente'], 200); // Código 200 para éxito
+                } else {
+                    Log::error('Failed to append row to Google Sheet, no rows updated', ['result' => $result]);
+                    return response()->json(['message' => 'Hubo un problema al enviar la información.'], 500); // Código 500 para error interno
+                }
 
-            if ($result->getUpdates() && $result->getUpdates()->getUpdatedRows() > 0) {
-                return response()->json(['message' => 'Información enviada correctamente'], 200); // Código 200 para éxito
-            } else {
-                Log::error('Failed to append row to Google Sheet, no rows updated', ['result' => $result]);
-                return response()->json(['message' => 'Hubo un problema al enviar la información.'], 500); // Código 500 para error interno
+            } catch (\Exception $e) {
+                // 6. Manejar Errores de Conexión o API (Devolver JSON)
+                Log::error('Error sending data: ' . $e->getMessage(), ['exception' => $e]);
+                return response()->json(['message' => 'Hubo un error en el servidor al comunicarse', 'error' => $e->getMessage()], 500); // Código 500 para error interno
             }
-
-        } catch (\Exception $e) {
-            // 6. Manejar Errores de Conexión o API (Devolver JSON)
-            Log::error('Error sending data: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Hubo un error en el servidor al comunicarse', 'error' => $e->getMessage()], 500); // Código 500 para error interno
-        }
-
+        */
     }
     public function showLaundryRecords()
     {
@@ -1135,11 +1062,11 @@ class FormController extends Controller
     public function deleteLaundry(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'row_number' => ['required', 'integer', 'min:2'],
+            'row_number' => ['required', 'integer', 'min:1'],
         ], [
             'row_number.required' => 'El número de fila es obligatorio para la eliminación.',
             'row_number.integer' => 'El número de fila debe ser un número entero.',
-            'row_number.min' => 'No se puede eliminar la fila de encabezados.',
+            'row_number.min' => 'No se puede eliminar la fila 0.',
         ]);
 
         if ($validator->fails()) {
@@ -1286,11 +1213,11 @@ class FormController extends Controller
     public function deleteAuditor(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'row_number' => ['required', 'integer', 'min:2'],
+            'row_number' => ['required', 'integer', 'min:1'],
         ], [
             'row_number.required' => 'El número de fila es obligatorio para la eliminación.',
             'row_number.integer' => 'El número de fila debe ser un número entero.',
-            'row_number.min' => 'No se puede eliminar la fila de encabezados.',
+            'row_number.min' => 'No se puede eliminar la fila 0.',
         ]);
 
         if ($validator->fails()) {
@@ -1553,11 +1480,11 @@ class FormController extends Controller
     public function deleteInventoryHk(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'row_number' => ['required', 'integer', 'min:2'], // Mínimo 2 porque la fila 1 son encabezados
+            'row_number' => ['required', 'integer', 'min:1'], // Mínimo 2 porque la fila 1 son encabezados
         ], [
             'row_number.required' => 'El número de fila es obligatorio para la eliminación.',
             'row_number.integer' => 'El número de fila debe ser un número entero.',
-            'row_number.min' => 'No se puede eliminar la fila de encabezados.',
+            'row_number.min' => 'No se puede eliminar la fila 0.',
         ]);
 
         if ($validator->fails()) {

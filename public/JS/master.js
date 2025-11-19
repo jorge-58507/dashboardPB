@@ -367,8 +367,6 @@ var initializeSalesRecordsDeletion = function () {
                     if (response.ok) {
                         toastIt(result.message, "success");
                         const rowElement = document.getElementById(`row-sales-${sale_id}`);
-                        console.log(rowElement);
-                        
                         if (rowElement) {rowElement.remove();}
                     } else {
                         const errorMessage = result.message || "Error al eliminar el registro de ventas.";
@@ -569,87 +567,96 @@ var initializePhoneCallRecordsDeletion = function () {
         );
         return;
     }
-
-    const formMessages = document.getElementById("records-messages");
-
     recordsContainer.addEventListener("click", async function (event) {
-        // Buscamos la clase específica para Llamadas: 'delete-phonecall-record'
         if (event.target.classList.contains("delete-phonecall-record")) {
             const button = event.target;
             const rowNumber = button.dataset.rowNumber;
 
-            if (
-                !confirm(
-                    `¿Estás seguro de que quieres eliminar el registro de llamadas de la fila ${rowNumber}? Esta acción es irreversible.`
-                )
-            ) {
-                return;
-            }
+            const res = await Swal.fire({
+                title: "¿Estás seguro?",
+                text: "No podrás revertir esta acción",
+                icon: "warning",
+                showCancelButton: true,
+                confirmButtonColor: "#3085d6",
+                cancelButtonColor: "#d33",
+                confirmButtonText: "Sí, eliminar",
+                cancelButtonText: "Cancelar",
+            });
+            if (res.isConfirmed) {
+                button.disabled = true;
+                button.textContent = "Eliminando...";
 
-            formMessages.innerHTML = "";
-            button.disabled = true;
-            button.textContent = "Eliminando...";
+                try {
+                    const response = await fetch("/formulario/delete-phonecall", {
+                        method: "DELETE",
+                        headers: {
+                            "X-CSRF-TOKEN": document
+                                .querySelector('meta[name="csrf-token"]')
+                                .getAttribute("content"),
+                            Accept: "application/json",
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({ id: rowNumber }),
+                    });
 
-            try {
-                // Usamos la URL directa para la ruta de eliminación de llamadas
-                const response = await fetch("/formulario/delete-phonecall", {
-                    method: "DELETE",
-                    headers: {
-                        "X-CSRF-TOKEN": document
-                            .querySelector('meta[name="csrf-token"]')
-                            .getAttribute("content"),
-                        Accept: "application/json",
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ row_number: rowNumber }),
-                });
+                    const result = await response.json();
 
-                const result = await response.json();
-
-                if (response.ok) {
-                    toastIt(result.message, "success");
-                    // Eliminar la fila visualmente, usando el ID específico de llamadas
-                    const rowElement = document.getElementById(
-                        `row-phonecall-${rowNumber}`
-                    );
-                    if (rowElement) {
-                        rowElement.remove();
+                    if (response.ok) {
+                        toastIt(result.message, "success");
+                        // Eliminar la fila visualmente, usando el ID específico de llamadas
+                        const rowElement = document.getElementById(`row-phonecall-${rowNumber}`);
+                        if (rowElement) {
+                            rowElement.className = 'bg-gray-700 text-white';
+                        }
+                    } else {
+                        let errorMessage = result.message || "Error al eliminar el registro de llamadas.";
+                        toastIt(errorMessage, "error");
                     }
-                    formMessages.innerHTML = `
-                        <div class="success-message">
-                            ${result.message}
-                        </div>
-                    `;
-                } else {
-                    let errorMessage =
-                        result.message ||
-                        "Error al eliminar el registro de llamadas.";
-                    toastIt(errorMessage, "error");
-                    formMessages.innerHTML = `
-                        <div class="error-message">
-                            <p class="font-bold">${errorMessage}</p>
-                        </div>
-                    `;
+                } catch (error) {
+                    console.error("Error al enviar la solicitud de eliminación de llamadas:",error);
+                    toastIt("Error de conexión al eliminar llamadas: " + error.message,"error");
+                } finally {
+                    button.disabled = false;
+                    button.textContent = "Eliminar";
                 }
-            } catch (error) {
-                console.error(
-                    "Error al enviar la solicitud de eliminación de llamadas:",
-                    error
-                );
-                toastIt(
-                    "Error de conexión al eliminar llamadas: " + error.message,
-                    "error"
-                );
-                formMessages.innerHTML = `
-                    <div class="error-message">
-                        <p class="font-bold">Ocurrió un error al conectar con el servidor.</p>
-                        <p>${error.message}</p>
-                    </div>
-                `;
-            } finally {
-                button.disabled = false;
-                button.textContent = "Eliminar";
             }
+        }
+    });
+};
+var initializePhoneCallRecordsFilter = function () {
+    const form = document.getElementById("PhoneCall-filter-form");
+    if (!form) return;
+
+    const formContainer = document.getElementById("form-content-container");
+
+    // Clonar para evitar listeners duplicados
+    const oldForm = form.cloneNode(true);
+    form.parentNode.replaceChild(oldForm, form);
+    const newForm = oldForm;
+
+    newForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        const formData = new FormData(newForm);
+        const params = new URLSearchParams(formData);
+        const formUrl = `${newForm.action}?${params.toString()}`;
+
+        formContainer.innerHTML = '<p class="text-center text-dark-navy">Cargando registros...</p>';
+
+        try {
+            const response = await fetch(formUrl, {
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                    Accept: "text/html",
+                },
+            });
+            const htmlContent = await response.text();
+            formContainer.innerHTML = htmlContent;
+            // Re-inicializar los listeners para la nueva tabla
+            initializePhoneCallRecordsDeletion();
+            initializePhoneCallRecordsFilter(); // Para que el filtro siga funcionando
+        } catch (error) {
+            console.error("Error al filtrar registros:", error);
+            toastIt("Error al cargar los registros: " + error.message, "error");
         }
     });
 };
