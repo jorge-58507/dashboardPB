@@ -654,7 +654,7 @@ class FormController extends Controller
             return response()->json(['status' => 'fail', 'message' => $ans['message']], $ans['HTTPcode']);
         }
     }
-
+    
     public function showSalesRecords(Request $request)
     {
         $filterDate = $request->input('filter_date', Carbon::now()->format('Y-m-d'));
@@ -1001,59 +1001,48 @@ class FormController extends Controller
 
         return response()->json(['message' => $ans['message']], $ans['HTTPcode']);
     }
-    public function showLaundryRecords()
+    public function showLaundryRecords(Request $request)
     {
-        // ¡IMPORTANTE! Confirma que 'laundry' es el nombre exacto de tu hoja de Lavandería
-        $sheetName = 'g';
-        $spreadsheetId = config('google.sheet_id');
-        $limitRows = 11;
+        $filterDate = $request->input('filter_date', Carbon::now()->format('Y-m-d'));
+        $year = Carbon::parse($filterDate)->year;
+        $month = Carbon::parse($filterDate)->month;
 
+        $query = dpb_laundry::query();
+
+        if ($request->has('filter_date') && $request->input('filter_date')) {
+            // Filtra registros donde el mes y año de la fecha de inicio coincidan
+            $query->whereYear('laundry_dateInit', $year)
+                  ->whereMonth('laundry_dateInit', $month);
+        } else {
+            // Por defecto, muestra el mes actual si no hay filtro
+            $query->whereYear('laundry_dateInit', Carbon::now()->year)
+                  ->whereMonth('laundry_dateInit', Carbon::now()->month);
+        }
+        
         $currentUser = Auth::user();
         $currentUserId = $currentUser->id;
-        $isAdmin = $currentUser->hasRole('Admin'); // O tu método para verificar admin
+        $isAdmin = $currentUser->hasRole('Admin');
 
         try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS_READONLY);
-            $service = new Sheets($client);
-
-            $fullRange = $sheetName . '!A:X';
-            $response = $service->spreadsheets_values->get($spreadsheetId, $fullRange);
-            $values = $response->getValues();
-
-            $displayHeaders = [];
-            $records = [];
-
-            // Usa el mapeo de encabezados específico para lavandería
-            $customHeadersMap = $this->laundryHeadersMap;
-
-            foreach ($customHeadersMap as $colIndex => $customName) {
-                $displayHeaders[$colIndex] = $customName;
+            if ($isAdmin) {
+                $records = $query->orderBy('laundry_status', 'DESC')->orderBy('laundry_dateInit', 'DESC')
+                    ->join('users', 'users.id', 'dpb_laundries.laundry_userid')->get();
+            } else {
+                $records = $query->orderBy('laundry_status', 'DESC')->orderBy('laundry_dateInit', 'DESC')
+                ->where('dpb_laundries.laundry_userid', $currentUserId)
+                ->join('users', 'users.id', 'dpb_laundries.laundry_userid')->get();
             }
+            
+            $displayHeaders = [
+                'laundry_dateInit' => 'Fecha Inicio',
+                'laundry_dateFinish' => 'Fecha Fin',
+                'name' => 'Usuario',
+                'laundry_total' => 'Gasto Total',
+                'laundry_cycle' => 'Ciclos',
+                'laundry_status' => 'Estado'
+            ];
 
-            if (!empty($values)) {
-                array_shift($values); // Remueve la fila de encabezados
-                $filteredRows = [];
-                foreach ($values as $index => $row) {
-                    $rowUserId = $row[4] ?? null; // Asume user_id está en la primera columna (índice 0)
-
-                    if ($isAdmin || (string) $rowUserId === (string) $currentUserId) {
-                        $recordData = ['row_number_gs' => ($index + 2)];
-                        $recordData['data_cols'] = [];
-                        foreach ($displayHeaders as $colIndex => $headerName) {
-                            $recordData['data_cols'][$colIndex] = $row[$colIndex] ?? '';
-                        }
-                        $filteredRows[] = $recordData;
-                    }
-                }
-
-                $filteredRows = array_reverse($filteredRows);
-                $records = array_slice($filteredRows, -$limitRows);
-            }
-
-            return view('forms.laundry_records', compact('displayHeaders', 'records'));
-
+            return view('forms.laundry_records', compact('displayHeaders', 'records', 'filterDate'));
         } catch (\Exception $e) {
             Log::error('Error al cargar registros de Lavandería: ' . $e->getMessage());
             return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
