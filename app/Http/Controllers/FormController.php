@@ -10,6 +10,7 @@ use Carbon\Carbon;
 use App\Models\dpb_gasconsumption;
 use App\Models\dpb_sale;
 use App\Models\dpb_phonecall;
+use App\Models\dpb_laundry;
 
 // Importaciones para Google Sheets API
 use Google\Client;
@@ -30,7 +31,8 @@ class FormController extends Controller
     protected $sheet = [
         'gasConsumption' => 'f',
         'sale' => 'h',
-        'phonecall' => 'j'
+        'phonecall' => 'j',
+        'laundry' => 'g'
     ];
     public function fillTable($sheetName, $rowData, $databaseId)
     {
@@ -931,75 +933,73 @@ class FormController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
-
         $validatedData = $validator->validated();
+        $userId = Auth::id();
 
+        $qry_dateInside =   dpb_laundry::where('laundry_dateInit', ">=", $validatedData['fechaInicio'])->where('laundry_dateFinish',"<=", $validatedData['fechaFin'])->where('laundry_status',1);
+        $qry_dateInit =     dpb_laundry::where('laundry_dateInit', "<=", $validatedData['fechaInicio'])->where('laundry_dateFinish',">=", $validatedData['fechaInicio'])->where('laundry_status',1);
+        $qry_dateFinish =   dpb_laundry::where('laundry_dateInit', "<=", $validatedData['fechaFin'])->where('laundry_dateFinish',">=", $validatedData['fechaFin'])->where('laundry_status',1);
+        $qry_dateuser =     dpb_laundry::where('laundry_dateInit', $validatedData['fechaInicio'])->where('laundry_dateFinish', $validatedData['fechaFin'])->where('laundry_userid', $userId);
+        $qry_date =         dpb_laundry::where('laundry_dateInit', $validatedData['fechaInicio'])->where('laundry_dateFinish', $validatedData['fechaFin']);
 
+        if ($qry_dateInside->count() > 0) {
+            return response()->json(['status' => 'fail', 'message' => 'Hay un registro dentro del rango de fechas ingresado.'], 500);
+        }
+        if ($qry_dateInit->count() > 0) {
+            return response()->json(['status' => 'fail', 'message' => 'La fecha de inicio existe dentro de un rango.'], 422);
+        }
+        if ($qry_dateFinish->count() > 0) {
+            return response()->json(['status' => 'fail', 'message' => 'La fecha de cierre existe dentro de un rango.'], 422);
+        }        
+        if ($qry_dateuser->count() > 0 && $qry_dateuser->first()->laundry_status === 1) {
+            return response()->json(['status' => 'fail', 'message' => 'Registro ya existe.'], 422);                
+        }
+        if ($qry_date->count() > 0 && $qry_date->first()->laundry_status === 1) {
+            $validatedData['databaseId'] = $qry_date->first()->laundry_id;
+            return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData], 204);
+        }
+
+        $m_laundry = new dpb_laundry;
+        $m_laundry->laundry_dateInit = $validatedData['fechaInicio'];
+        $m_laundry->laundry_dateFinish = $validatedData['fechaFin'];
+        $m_laundry->laundry_userid = $userId;
+        $m_laundry->laundry_total = $validatedData['totalGasto'];
+        $m_laundry->laundry_cycle = $validatedData['cantidadCiclos'];
+        $m_laundry->laundry_status = 1;
+        $m_laundry->save();
 
         $min = 15;
         $max = 9999;
         $rowData = [
-            mt_rand($min, $max), // Columna 1
-            mt_rand($min, $max), // Columna 2
-            mt_rand($min, $max), // Columna 3
-            mt_rand($min, $max), // Columna 4
-            Auth::id(),          // Columna 5 (user_id)
-            mt_rand($min, $max), // Columna 6
-            mt_rand($min, $max), // Columna 7
-            mt_rand($min, $max), // Columna 8
-            $request->input('fechaInicio'), // <-- NUEVO CAMPO: Fecha de Inicio (columna 9)
-            mt_rand($min, $max), // Columna 10
-            mt_rand($min, $max), // Columna 11
-            mt_rand($min, $max), // Columna 12
-            mt_rand($min, $max), // Columna 13
-            mt_rand($min, $max), // Columna 14
-            $request->input('totalGasto'), // Columna 15 (totalGasto)
-            mt_rand($min, $max), // Columna 16
-            date('Y-m-d H:i:s'), // Columna 17 (Timestamp)
-            mt_rand($min, $max), // Columna 18
-            mt_rand($min, $max), // Columna 19
-            $request->input('cantidadCiclos'), // Columna 20 (cantidadCiclos)
-            $request->input('fechaFin'), // <-- NUEVO CAMPO: Fecha de Fin (columna 21)
-            mt_rand($min, $max), // Columna 22
-            mt_rand($min, $max), // Columna 23
+            mt_rand($min, $max), 
+            mt_rand($min, $max), 
+            mt_rand($min, $max), 
+            mt_rand($min, $max),
+            Auth::id(),          
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            $request->input('fechaInicio'),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            $request->input('totalGasto'),
+            mt_rand($min, $max),
+            date('Y-m-d H:i:s'),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            $request->input('cantidadCiclos'),
+            $request->input('fechaFin'),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
             $m_laundry->laundry_id
         ];
 
-        $values = [$rowData];
-        /*
-            try {
-                $client = new Client();
-                $client->setAuthConfig(config('google.service_account_credentials_path'));
-                $client->addScope(Sheets::SPREADSHEETS);
+        $ans = $this->fillTable($this->sheet['laundry'], $rowData, $m_laundry->laundry_id);
 
-                $service = new Sheets($client);
-
-                $spreadsheetId = config('google.sheet_id');
-                $range = 'g!A2';
-
-                $body = new ValueRange([
-                    'values' => $values
-                ]);
-
-                $params = [
-                    'valueInputOption' => 'RAW'
-                ];
-
-                $result = $service->spreadsheets_values->append($spreadsheetId, $range, $body, $params);
-
-                if ($result->getUpdates() && $result->getUpdates()->getUpdatedRows() > 0) {
-                    return response()->json(['message' => 'Información enviada correctamente'], 200); // Código 200 para éxito
-                } else {
-                    Log::error('Failed to append row to Google Sheet, no rows updated', ['result' => $result]);
-                    return response()->json(['message' => 'Hubo un problema al enviar la información.'], 500); // Código 500 para error interno
-                }
-
-            } catch (\Exception $e) {
-                // 6. Manejar Errores de Conexión o API (Devolver JSON)
-                Log::error('Error sending data: ' . $e->getMessage(), ['exception' => $e]);
-                return response()->json(['message' => 'Hubo un error en el servidor al comunicarse', 'error' => $e->getMessage()], 500); // Código 500 para error interno
-            }
-        */
+        return response()->json(['message' => $ans['message']], $ans['HTTPcode']);
     }
     public function showLaundryRecords()
     {

@@ -283,7 +283,7 @@ var initializeSalesForm = function () {
                     showCancelButton: true,
                     confirmButtonColor: "#3085d6",
                     cancelButtonColor: "#d33",
-                    confirmButtonText: "Sí, eliminar",
+                    confirmButtonText: "Sí, actualizar",
                     cancelButtonText: "Cancelar",
                 });
 
@@ -471,7 +471,7 @@ var initializePhoneCallForm = function () {
                         showCancelButton: true,
                         confirmButtonColor: "#3085d6",
                         cancelButtonColor: "#d33",
-                        confirmButtonText: "Sí, eliminar",
+                        confirmButtonText: "Sí, actualizar",
                         cancelButtonText: "Cancelar",
                     });
 
@@ -522,31 +522,6 @@ var initializePhoneCallForm = function () {
                 }
                 toastIt(errorMessage); // Usar toastIt directamente
             }
-            // const result = await response.json();
-            // if (response.ok) {
-
-
-
-
-
-            //     newForm.reset();
-            //     toastIt(result.message); // Usar toastIt directamente
-            // } else {
-            //     let errorMessage = result.message || "Ocurrió un error inesperado.";
-            //     if (response.status === 422 && result.errors) {
-            //         errorMessage = "Falló la validación. Por favor, revisa tus entradas.";
-            //         for (const field in result.errors) {
-            //             const errorElement = newForm.querySelector(
-            //                 `#error-${field}`
-            //             );
-            //             if (errorElement) {
-            //                 errorElement.textContent = result.errors[field][0];
-            //                 errorElement.classList.remove("hidden");
-            //             }
-            //         }
-            //     }
-            //     toastIt(errorMessage); // Usar toastIt directamente
-            // }
         } catch (error) {
             console.error("Error al enviar el formulario de llamadas:", error);
             formMessages.innerHTML = `
@@ -666,7 +641,6 @@ var initializeLaundryForm = function () {
     const form = document.getElementById("laundryForm");
     if (!form) return; // Si el formulario no está en el DOM, no hacer nada
 
-    const formMessages = document.getElementById("form-messages");
     const formCsrfToken = document.querySelector('input[name="_token"]').value; // El token está en el input oculto del formulario
 
     // Limpiar listeners viejos si el formulario ya existía (útil si se carga varias veces)
@@ -678,9 +652,7 @@ var initializeLaundryForm = function () {
     enforceNumericInput("cantidadCiclos", false); // Solo enteros
 
     newForm.addEventListener("submit", async function (event) {
-        event.preventDefault(); // Evitar el envío por defecto
-        formMessages.innerHTML = ""; // Limpiar mensajes anteriores
-        // Ocultar todos los mensajes de validación
+        event.preventDefault();
         newForm
             .querySelectorAll(".validation-error")
             .forEach((el) => el.classList.add("hidden"));
@@ -702,15 +674,57 @@ var initializeLaundryForm = function () {
             const result = await response.json();
 
             if (response.ok) {
-                newForm.reset(); // Limpiar el formulario
-                toastIt(result.message, "success");
-            } else {
-                let errorMessage =
-                    result.message || "Ocurrió un error inesperado.";
+                console.log(response.status);
+                
+                if (result.status === "confirm") {
+                    const res = await Swal.fire({
+                        title: "Deseas actualizar el registro?",
+                        text: "No podrás revertir esta acción",
+                        icon: "warning",
+                        showCancelButton: true,
+                        confirmButtonColor: "#3085d6",
+                        cancelButtonColor: "#d33",
+                        confirmButtonText: "Sí, actualizar",
+                        cancelButtonText: "Cancelar",
+                    });
 
+                    if (res.isConfirmed) {
+                        const responseData = result.data;
+                        try {
+                            const response = await fetch(newForm.action, {
+                                method: "PUT",
+                                headers: {
+                                    "Content-Type": "application/json",
+                                    Accept: "application/json",
+                                    "X-CSRF-TOKEN": formCsrfToken,
+                                },
+                                body: JSON.stringify(responseData),
+                            });
+                            const ans = await response.json();
+                            if (ans.status === "success") {
+                                newForm.reset();
+                                toastIt(ans.message, "success");
+                            } else {
+                                const errorMessage = ans.message || "Error al actualizar el registro.";
+                                toastIt(errorMessage, "error");
+                            }
+                        } catch (error) {
+                            console.error("Error al enviar la solicitud de eliminación:",error);
+                            toastIt("Error de conexión al eliminar gas: " +error.message,"error");
+                        }
+                    }
+                } else {
+                    newForm.reset();
+                    if (response.status > 299) {
+                        toastIt(result.message, "error");
+                    }else{
+                        toastIt(result.message, "success");
+                    }
+                }
+            } else {
+                let errorMessage = result.message || "Ocurrió un error inesperado.";
                 if (response.status === 422 && result.errors) {
-                    errorMessage =
-                        "Falló la validación. Por favor, revisa tus entradas.";
+                    errorMessage = "Falló la validación. Por favor, revisa tus entradas.";
                     for (const field in result.errors) {
                         const errorElement = newForm.querySelector(
                             `#error-${field}`
@@ -721,22 +735,10 @@ var initializeLaundryForm = function () {
                         }
                     }
                 }
-
-                formMessages.innerHTML = `
-                            <div class="error-message">
-                                <p class="font-bold">${errorMessage}</p>
-                            </div>
-                        `;
-                toastIt(errorMessage, "error");
+                toastIt(errorMessage,"error"); // Usar toastIt directamente
             }
         } catch (error) {
             console.error("Error:", error);
-            formMessages.innerHTML = `
-                        <div class="error-message">
-                            <p class="font-bold">Ocurrió un error al conectar con el servidor.</p>
-                            <p>${error.message}</p>
-                        </div>
-                    `;
             toastIt("Error de conexión: " + error.message, "error");
         }
     });

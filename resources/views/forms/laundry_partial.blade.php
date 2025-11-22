@@ -10,6 +10,20 @@
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <div class="form-group">
+            <label for="fechaInicio">Fecha Inicio:</label>
+            <input type="date" id="fechaInicio" name="fechaInicio" value="{{ old('fechaInicio') }}" required
+                   class="shadow appearance-none border border-light-gray rounded w-full py-2 px-3 text-dark-navy leading-tight focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-accent-blue">
+            <p id="error-fechaInicio" class="validation-error hidden"></p>
+        </div>
+
+        <div class="form-group">
+            <label for="fechaFin">Fecha Cierre:</label>
+            <input type="date" id="fechaFin" name="fechaFin" value="{{ old('fechaFin') }}" required
+                   class="shadow appearance-none border border-light-gray rounded w-full py-2 px-3 text-dark-navy leading-tight focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-accent-blue">
+            <p id="error-fechaFin" class="validation-error hidden"></p>
+        </div>
+
+        <div class="form-group">
             <label for="totalGasto">Total Gastado:</label>
             <input type="text" id="totalGasto" name="totalGasto" value="{{ old('totalGasto') }}" step="0.01" required
                    class="shadow appearance-none border border-light-gray rounded w-full py-2 px-3 text-dark-navy leading-tight focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-accent-blue">
@@ -21,22 +35,6 @@
             <input type="text" id="cantidadCiclos" name="cantidadCiclos" value="{{ old('cantidadCiclos') }}" required
                    class="shadow appearance-none border border-light-gray rounded w-full py-2 px-3 text-dark-navy leading-tight focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-accent-blue">
             <p id="error-cantidadCiclos" class="validation-error hidden"></p>
-        </div>
-
-        {{-- NUEVO CAMPO DE FECHA DE INICIO --}}
-        <div class="form-group">
-            <label for="fechaInicio">Fecha Inicio:</label>
-            <input type="date" id="fechaInicio" name="fechaInicio" value="{{ old('fechaInicio') }}" required
-                   class="shadow appearance-none border border-light-gray rounded w-full py-2 px-3 text-dark-navy leading-tight focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-accent-blue">
-            <p id="error-fechaInicio" class="validation-error hidden"></p>
-        </div>
-
-        {{-- CAMPO DE FECHA DE FIN (ANTERIORMENTE 'date') --}}
-        <div class="form-group">
-            <label for="fechaFin">Fecha Cierre:</label>
-            <input type="date" id="fechaFin" name="fechaFin" value="{{ old('fechaFin') }}" required
-                   class="shadow appearance-none border border-light-gray rounded w-full py-2 px-3 text-dark-navy leading-tight focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-accent-blue">
-            <p id="error-fechaFin" class="validation-error hidden"></p>
         </div>
     </div>
 

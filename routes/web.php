@@ -65,19 +65,6 @@ Route::middleware('auth')->group(function () {
             ->middleware(['role:Admin|Ventas'])
             ->name('sales.delete');
 
-        // Rutas para Lavandería
-        Route::get('/laundry-partial', [FormController::class, 'showLaundryForm'])
-            ->name('laundry_partial');
-        Route::post('/submit-laundry', [FormController::class, 'submitLaundry'])
-            ->middleware(['role:Admin|Lavanderia|Housekeeping'])
-            ->name('laundry.submit');
-        Route::get('/laundry-records', [FormController::class, 'showLaundryRecords'])
-            ->middleware(['role:Admin|Lavanderia|Housekeeping'])
-            ->name('laundry.records');
-        Route::delete('/delete-laundry', [FormController::class, 'deleteLaundry'])
-            ->middleware(['role:Admin|Lavanderia|Housekeeping'])
-            ->name('laundry.delete');
-
         // Rutas para Registro Diario de Llamadas
         Route::get('/phonecall-partial', [FormController::class, 'showPhoneCallForm'])
             ->name('phonecall_partial');
@@ -90,6 +77,19 @@ Route::middleware('auth')->group(function () {
         Route::delete('/delete-phonecall', [FormController::class, 'deletePhoneCall'])
             ->middleware(['role:Admin|Llamadas|Ventas']) // Considera si 'Ventas' necesita acceso a esto
             ->name('phonecall.delete');
+
+        // Rutas para Lavandería
+        Route::get('/laundry-partial', [FormController::class, 'showLaundryForm'])
+            ->name('laundry_partial');
+        Route::post('/submit-laundry', [FormController::class, 'submitLaundry'])
+            ->middleware(['role:Admin|Lavanderia|Housekeeping'])
+            ->name('laundry.submit');
+        Route::get('/laundry-records', [FormController::class, 'showLaundryRecords'])
+            ->middleware(['role:Admin|Lavanderia|Housekeeping'])
+            ->name('laundry.records');
+        Route::delete('/delete-laundry', [FormController::class, 'deleteLaundry'])
+            ->middleware(['role:Admin|Lavanderia|Housekeeping'])
+            ->name('laundry.delete');
 
         // --- NUEVAS RUTAS PARA INVENTARIO DE HOUSEKEEPING (HK) ---
         Route::get('/inventoryhk-partial', [FormController::class, 'showInventoryHkForm'])
