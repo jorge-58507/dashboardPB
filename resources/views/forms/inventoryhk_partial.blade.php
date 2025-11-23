@@ -3,21 +3,20 @@
 <div class="bg-white p-6 rounded-lg shadow-lg">
     <h2 class="text-2xl font-bold text-dark-navy mb-6">Inventario de Housekeeping (HK)</h2>
 
-    {{-- Contenedor para mensajes de éxito o error --}}
-    <div id="form-messages" class="mt-4 mb-4"></div>
-
     <form id="inventoryHkForm" action="{{ route('formulario.inventoryhk.submit') }}" onsubmit="disableButton(this);" method="POST">
         @csrf
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {{-- Fecha del Inventario --}}
-            <div class="col-span-full">
-                <label for="fechaInventario" class="block text-gray-700 text-sm font-bold mb-2">Fecha del Inventario:</label>
-                <input type="date" name="fechaInventario" id="fechaInventario" value="{{ \Carbon\Carbon::now()->format('Y-m-d')  }}"
+            <div>
+                <label for="fechaRegistro" class="block text-gray-700 text-sm font-bold mb-2">Fecha del Inventario:</label>
+                <input type="date" name="fechaRegistro" id="fechaRegistro" value="{{ \Carbon\Carbon::now()->format('Y-m-d')  }}"
                        class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
                        required max="{{ \Carbon\Carbon::now()->format('Y-m-d') }}">
-                <p id="error-fechaInventario" class="text-red-500 text-xs italic hidden"></p>
+                <p id="error-fechaRegistro" class="text-red-500 text-xs italic hidden"></p>
             </div>
+            <div class="border hidden md:block">&nbsp;</div>
+            <div class="border hidden lg:block">&nbsp;</div>
 
             {{-- Sábanas --}}
             <div>

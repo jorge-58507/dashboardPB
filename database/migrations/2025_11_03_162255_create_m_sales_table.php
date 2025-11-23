@@ -17,14 +17,14 @@ return new class extends Migration
             $table->bigIncrements('sale_id');
             $table->datetime('sale_date');
             $table->unsignedBigInteger('sale_userid');
-            $table->float('sale_corporative');
-            $table->float('sale_national');
-            $table->float('sale_international');
-            $table->float('sale_callcenter');
-            $table->float('sale_ota');
-            $table->float('sale_arenas');
-            $table->float('sale_web');
-            $table->integer('sale_status');
+            $table->float('sale_corporative')->nullable();
+            $table->float('sale_national')->nullable();
+            $table->float('sale_international')->nullable();
+            $table->float('sale_callcenter')->nullable();
+            $table->float('sale_ota')->nullable();
+            $table->float('sale_arenas')->nullable();
+            $table->float('sale_web')->nullable();
+            $table->integer('sale_status')->nullable();
             $table->timestamps();
 
 

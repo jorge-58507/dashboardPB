@@ -1,7 +1,5 @@
 {{-- resources/views/forms/sales_partial.blade.php --}}
 
-<div id="form-messages" class="mb-4"></div>
-
 <form id="auditorForm" action="{{ route('formulario.auditor.submit') }}" onsubmit="disableButton(this);"  method="POST" class="max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-md border border-light-gray" autocomplete="off">
     @csrf
 
@@ -14,8 +12,9 @@
                    class="shadow appearance-none border border-light-gray rounded w-full py-2 px-3 text-dark-navy leading-tight focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-accent-blue">
             <p id="error-fechaRegistro" class="validation-error hidden"></p>
         </div>
+        <div class="hidden md:block">&nbsp;</div>
 
-        <div class="form-group">
+        <div class="form-group **md:col-start-3**">
             <label for="montoAB">Ingresos por A&B:</label>
             <input type="text" id="montoAB" name="montoAB" value="{{ old('montoAB') }}" step="0.01" required
                    class="shadow appearance-none border border-light-gray rounded w-full py-2 px-3 text-dark-navy leading-tight focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-accent-blue">

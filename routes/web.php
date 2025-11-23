@@ -71,6 +71,8 @@ Route::middleware('auth')->group(function () {
         Route::post('/submit-phonecall', [FormController::class, 'submitPhoneCall'])
             ->middleware(['role:Admin|Llamadas|Ventas']) // Considera si 'Ventas' necesita acceso a esto
             ->name('phonecall.submit');
+        Route::put('/submit-phonecall', [FormController::class, 'updatePhonecall'])
+            ->middleware(['role:Admin|Llamadas|Ventas']);
         Route::get('/phonecall-records', [FormController::class, 'showPhoneCallRecords'])
             ->middleware(['role:Admin|Llamadas|Ventas']) // Considera si 'Ventas' necesita acceso a esto
             ->name('phonecall.records');
@@ -84,6 +86,8 @@ Route::middleware('auth')->group(function () {
         Route::post('/submit-laundry', [FormController::class, 'submitLaundry'])
             ->middleware(['role:Admin|Lavanderia|Housekeeping'])
             ->name('laundry.submit');
+        Route::put('/submit-laundry', [FormController::class, 'updateLaundry'])
+            ->middleware(['role:Admin|Lavanderia|Housekeeping']);
         Route::get('/laundry-records', [FormController::class, 'showLaundryRecords'])
             ->middleware(['role:Admin|Lavanderia|Housekeeping'])
             ->name('laundry.records');
@@ -97,6 +101,8 @@ Route::middleware('auth')->group(function () {
         Route::post('/submit-inventoryhk', [FormController::class, 'submitInventoryHk'])
             ->middleware(['role:Admin|Housekeeping'])
             ->name('inventoryhk.submit');
+        Route::put('/submit-inventoryhk', [FormController::class, 'updateInventoryhk'])
+            ->middleware(['role:Admin|Housekeeping']);
         Route::get('/inventoryhk-records', [FormController::class, 'showInventoryHkRecords'])
             ->middleware(['role:Admin|Housekeeping'])
             ->name('inventoryhk.records');

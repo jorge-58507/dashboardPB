@@ -11,6 +11,7 @@ use App\Models\dpb_gasconsumption;
 use App\Models\dpb_sale;
 use App\Models\dpb_phonecall;
 use App\Models\dpb_laundry;
+use App\Models\dpb_inventoryhk;
 
 // Importaciones para Google Sheets API
 use Google\Client;
@@ -32,7 +33,8 @@ class FormController extends Controller
         'gasConsumption' => 'f',
         'sale' => 'h',
         'phonecall' => 'j',
-        'laundry' => 'g'
+        'laundry' => 'g',
+        'inventoryhk'=> 'k'
     ];
     public function fillTable($sheetName, $rowData, $databaseId)
     {
@@ -769,15 +771,15 @@ class FormController extends Controller
         $validatedData = $validator->validated();
         $userId = Auth::id();
 
-        $qry_phonecall_dateuser = dpb_phonecall::where('phonecall_date', $validatedData['fechaRegistro'])->where('phonecall_userid', $userId);
-        $qry_phonecall_date = dpb_phonecall::where('phonecall_date', $validatedData['fechaRegistro']);
-
-        if ($qry_phonecall_dateuser->count() > 0 && $qry_phonecall_dateuser->first()->phonecall_status === 1) {
+        $qry_phonecall_dateuser = dpb_phonecall::where('phonecall_date', $validatedData['fechaRegistro'])->where('phonecall_userid', $userId)->where('phonecall_status',1);
+        if ($qry_phonecall_dateuser->count() > 0) {
             return response()->json(['status' => 'fail', 'message' => 'Registro ya existe.'], 422);                
         }
-        if ($qry_phonecall_date->count() > 0 && $qry_phonecall_date->first()->phonecall_status === 1) {
+
+        $qry_phonecall_date = dpb_phonecall::where('phonecall_date', $validatedData['fechaRegistro'])->where('phonecall_status',1);
+        if ($qry_phonecall_date->count() > 0) {
             $validatedData['databaseId'] = $qry_phonecall_date->first()->phonecall_id;
-            return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData], 204);
+            return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData], 200);
         }
 
         $m_phonecall = new dpb_phonecall;
@@ -824,6 +826,87 @@ class FormController extends Controller
         return response()->json([
             'message' => $ans['message']
         ], $ans['HTTPcode']);
+    }
+    public function updatePhonecall(Request $request)
+    {
+        $userId = Auth::id();
+        $validator = Validator::make($request->all(), [
+            'fechaRegistro' => ['required', 'date_format:Y-m-d', 'before_or_equal:' . Carbon::now()->format('Y-m-d')],
+            'cantidadLlamadas' => ['required', 'integer', 'min:0'],
+            'ventasLogradas' => ['required', 'integer', 'min:0'],
+            'tiempoPromedioLlamadas' => ['required', 'numeric', 'min:0'],
+            'databaseId' => ['required', 'numeric', 'min:1'],
+        ], [
+            'fechaRegistro.required' => 'La fecha es obligatoria.',
+            'fechaRegistro.date_format' => 'El formato de la fecha no es válido (debe ser AAAA-MM-DD).',
+            'fechaRegistro.before_or_equal' => 'La fecha de registro no puede ser futura.',
+            'cantidadLlamadas.required' => 'La cantidad de llamadas es obligatoria.',
+            'cantidadLlamadas.integer' => 'La cantidad de llamadas debe ser un número entero.',
+            'cantidadLlamadas.min' => 'La cantidad de llamadas no puede ser negativa.',
+            'ventasLogradas.required' => 'La cantidad de ventas logradas es obligatoria.',
+            'ventasLogradas.integer' => 'Las ventas logradas deben ser un número entero.',
+            'ventasLogradas.min' => 'Las ventas logradas no pueden ser negativas.',
+            'tiempoPromedioLlamadas.required' => 'El tiempo promedio de llamadas es obligatorio.',
+            'tiempoPromedioLlamadas.numeric' => 'El tiempo promedio de llamadas debe ser un número.',
+            'tiempoPromedioLlamadas.min' => 'El tiempo promedio de llamadas no puede ser negativo.',
+            'databaseId.required' => 'El campo ID es obligatorio.',
+            'databaseId.numeric' => 'El campo ID debe ser un número.',
+            'databaseId.min' => 'El campo ID no puede ser negativo.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation Failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        $validatedData = $validator->validated(); // Obtener los datos validados
+
+        $m_phonecall = dpb_phonecall::find($validatedData['databaseId']);
+        $m_phonecall->phonecall_date = $validatedData['fechaRegistro'];
+        $m_phonecall->phonecall_userid = $userId;
+        $m_phonecall->phonecall_quantity = $validatedData['cantidadLlamadas'];
+        $m_phonecall->phonecall_success = $validatedData['ventasLogradas'];
+        $m_phonecall->phonecall_average = $validatedData['tiempoPromedioLlamadas'];
+        $m_phonecall->phonecall_status = 1;
+        $m_phonecall->save();
+
+        // Prepara la fila con los datos actualizados para Google Sheets
+        $min = 15;
+        $max = 9999;
+        $newRowData = [
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max), 
+            $userId,            
+            $request->input('fechaRegistro'),  
+            mt_rand($min, $max),
+            floatval($request->input('cantidadLlamadas')),
+            mt_rand($min, $max), 
+            floatval($request->input('ventasLogradas')), 
+            mt_rand($min, $max), 
+            mt_rand($min, $max), 
+            floatval($request->input('tiempoPromedioLlamadas')),
+            mt_rand($min, $max), 
+            Carbon::now()->toDateTimeString(), 
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            $m_phonecall->phonecall_id
+        ];
+
+        $ans = $this->updateTable($this->sheet['phonecall'], $validatedData['databaseId'], $newRowData);
+        if ($ans['status'] === 'success') {
+            return response()->json(['status' => 'success', 'message' => $ans['message']], $ans['HTTPcode']);
+        } else {
+            return response()->json(['status' => 'fail', 'message' => $ans['message']], $ans['HTTPcode']);
+        }
     }
     public function showPhoneCallRecords(Request $request)
     {
@@ -884,10 +967,7 @@ class FormController extends Controller
             'id.min' => 'No existe el registro en ese rango.',
         ]);
         if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation Failed',
-                'errors' => $validator->errors()
-            ], 422);
+            return response()->json(['message' => 'Validation Failed', 'errors' => $validator->errors()], 422);
         }
 
         $id = $request->input('id');
@@ -936,11 +1016,14 @@ class FormController extends Controller
         $validatedData = $validator->validated();
         $userId = Auth::id();
 
-        $qry_dateInside =   dpb_laundry::where('laundry_dateInit', ">=", $validatedData['fechaInicio'])->where('laundry_dateFinish',"<=", $validatedData['fechaFin'])->where('laundry_status',1);
-        $qry_dateInit =     dpb_laundry::where('laundry_dateInit', "<=", $validatedData['fechaInicio'])->where('laundry_dateFinish',">=", $validatedData['fechaInicio'])->where('laundry_status',1);
-        $qry_dateFinish =   dpb_laundry::where('laundry_dateInit', "<=", $validatedData['fechaFin'])->where('laundry_dateFinish',">=", $validatedData['fechaFin'])->where('laundry_status',1);
-        $qry_dateuser =     dpb_laundry::where('laundry_dateInit', $validatedData['fechaInicio'])->where('laundry_dateFinish', $validatedData['fechaFin'])->where('laundry_userid', $userId);
-        $qry_date =         dpb_laundry::where('laundry_dateInit', $validatedData['fechaInicio'])->where('laundry_dateFinish', $validatedData['fechaFin']);
+        $qry_dateInside =   dpb_laundry::where('laundry_dateInit', ">", $validatedData['fechaInicio'])->where('laundry_dateFinish',"<", $validatedData['fechaFin'])->where('laundry_status',1);
+        $qry_dateInit =     dpb_laundry::where('laundry_dateInit', "<", $validatedData['fechaInicio'])->where('laundry_dateFinish',">=", $validatedData['fechaInicio'])->where('laundry_status',1);
+
+        $qry_dateFinish =   dpb_laundry::where('laundry_dateInit', "<=", $validatedData['fechaFin'])->where('laundry_dateFinish',">", $validatedData['fechaFin'])->where('laundry_status',1);
+        $qry_dateuser =     dpb_laundry::where('laundry_dateInit', $validatedData['fechaInicio'])->where('laundry_dateFinish', $validatedData['fechaFin'])->where('laundry_status',1)->where('laundry_userid', $userId);
+        $qry_date =         dpb_laundry::where('laundry_dateInit', $validatedData['fechaInicio'])->where('laundry_dateFinish', $validatedData['fechaFin'])->where('laundry_status',1);
+        $qry_dateInitUpd =         dpb_laundry::where('laundry_dateInit', $validatedData['fechaInicio'])->where('laundry_status',1);
+        $qry_dateFinishUpd =       dpb_laundry::where('laundry_dateFinish', $validatedData['fechaFin'])->where('laundry_status',1);
 
         if ($qry_dateInside->count() > 0) {
             return response()->json(['status' => 'fail', 'message' => 'Hay un registro dentro del rango de fechas ingresado.'], 500);
@@ -951,12 +1034,20 @@ class FormController extends Controller
         if ($qry_dateFinish->count() > 0) {
             return response()->json(['status' => 'fail', 'message' => 'La fecha de cierre existe dentro de un rango.'], 422);
         }        
-        if ($qry_dateuser->count() > 0 && $qry_dateuser->first()->laundry_status === 1) {
+        if ($qry_dateuser->count() > 0) {
             return response()->json(['status' => 'fail', 'message' => 'Registro ya existe.'], 422);                
         }
-        if ($qry_date->count() > 0 && $qry_date->first()->laundry_status === 1) {
+        if ($qry_date->count() > 0) {
             $validatedData['databaseId'] = $qry_date->first()->laundry_id;
-            return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData], 204);
+            return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData], 200);
+        }
+        if ($qry_dateInitUpd->count() > 0) {
+            $validatedData['databaseId'] = $qry_dateInitUpd->first()->laundry_id;
+            return response()->json(['status' => 'confirm', 'message' => 'La fecha Inicio ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData], 200);
+        }
+        if ($qry_dateFinishUpd->count() > 0) {
+            $validatedData['databaseId'] = $qry_dateFinishUpd->first()->laundry_id;
+            return response()->json(['status' => 'confirm', 'message' => 'La fecha Cierre ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData], 200);
         }
 
         $m_laundry = new dpb_laundry;
@@ -1001,6 +1092,85 @@ class FormController extends Controller
 
         return response()->json(['message' => $ans['message']], $ans['HTTPcode']);
     }
+    public function updateLaundry(Request $request)
+    {
+        $userId = Auth::id();
+        $validator = Validator::make($request->all(), [
+            'totalGasto' => ['required', 'numeric', 'min:0'],
+            'cantidadCiclos' => ['required', 'integer', 'min:0'],
+            'fechaInicio' => ['required', 'date'], // NUEVA REGLA
+            'fechaFin' => ['required', 'date', 'after_or_equal:fechaInicio', 'before_or_equal:today'],
+            'databaseId' => ['required', 'numeric', 'min:1'],
+        ], [
+            'totalGasto.required' => 'El campo Gasto Total es obligatorio.',
+            'totalGasto.numeric' => 'El campo Gasto Total debe ser un número.',
+            'totalGasto.min' => 'El campo Gasto Total no puede ser negativo.',
+            'cantidadCiclos.required' => 'El campo Cantidad de Ciclos es obligatorio.',
+            'cantidadCiclos.integer' => 'El campo Cantidad de Ciclos debe ser un número entero.',
+            'cantidadCiclos.min' => 'El campo Cantidad de Ciclos no puede ser negativo.',
+            'fechaInicio.required' => 'El campo Fecha de Inicio es obligatorio.',
+            'fechaInicio.date' => 'El campo Fecha de Inicio debe ser una fecha válida.',
+            'fechaFin.required' => 'El campo Fecha de Fin es obligatorio.',
+            'fechaFin.date' => 'El campo Fecha de Fin debe ser una fecha válida.',
+            'fechaFin.after_or_equal' => 'La Fecha de Fin debe ser igual o posterior a la Fecha de Inicio.',
+            'fechaFin.before_or_equal' => 'La Fecha de Fin no puede ser mayor a la fecha actual.',
+            'databaseId.required' => 'El campo ID es obligatorio.',
+            'databaseId.numeric' => 'El campo ID debe ser un número.',
+            'databaseId.min' => 'El campo ID no puede ser negativo.',
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation Failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        $validatedData = $validator->validated(); // Obtener los datos validados
+
+        $m_laundry = dpb_laundry::find($validatedData['databaseId']);
+        $m_laundry->laundry_dateInit = $validatedData['fechaInicio'];
+        $m_laundry->laundry_dateFinish = $validatedData['fechaFin'];
+        $m_laundry->laundry_userid = $userId;
+        $m_laundry->laundry_total = $validatedData['totalGasto'];
+        $m_laundry->laundry_cycle = $validatedData['cantidadCiclos'];
+        $m_laundry->laundry_status = 1;
+        $m_laundry->save();
+
+        $min = 15;
+        $max = 9999;
+        $newRowData = [
+            mt_rand($min, $max), 
+            mt_rand($min, $max), 
+            mt_rand($min, $max), 
+            mt_rand($min, $max),
+            Auth::id(),          
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            $request->input('fechaInicio'),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            $request->input('totalGasto'),
+            mt_rand($min, $max),
+            date('Y-m-d H:i:s'),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            $request->input('cantidadCiclos'),
+            $request->input('fechaFin'),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            $m_laundry->laundry_id
+        ];
+
+        $ans = $this->updateTable($this->sheet['laundry'], $validatedData['databaseId'], $newRowData);
+        if ($ans['status'] === 'success') {
+            return response()->json(['status' => 'success', 'message' => $ans['message']], $ans['HTTPcode']);
+        } else {
+            return response()->json(['status' => 'fail', 'message' => $ans['message']], $ans['HTTPcode']);
+        }
+    }
     public function showLaundryRecords(Request $request)
     {
         $filterDate = $request->input('filter_date', Carbon::now()->format('Y-m-d'));
@@ -1010,13 +1180,12 @@ class FormController extends Controller
         $query = dpb_laundry::query();
 
         if ($request->has('filter_date') && $request->input('filter_date')) {
-            // Filtra registros donde el mes y año de la fecha de inicio coincidan
-            $query->whereYear('laundry_dateInit', $year)
-                  ->whereMonth('laundry_dateInit', $month);
+            $query->whereYear('laundry_dateInit', "<=", $year)->whereYear('laundry_dateFinish', ">=", $year)
+                  ->whereMonth('laundry_dateInit', "<=", $month)->whereMonth('laundry_dateFinish', ">=", $month);
         } else {
-            // Por defecto, muestra el mes actual si no hay filtro
-            $query->whereYear('laundry_dateInit', Carbon::now()->year)
-                  ->whereMonth('laundry_dateInit', Carbon::now()->month);
+            $query->whereYear('laundry_dateInit', "<=", Carbon::now()->year)->whereYear('laundry_dateFinish', ">=", Carbon::now()->year)
+                  ->whereMonth('laundry_dateInit', "<=", Carbon::now()->month)->whereMonth('laundry_dateFinish', ">=", Carbon::now()->month);
+
         }
         
         $currentUser = Auth::user();
@@ -1035,7 +1204,7 @@ class FormController extends Controller
             
             $displayHeaders = [
                 'laundry_dateInit' => 'Fecha Inicio',
-                'laundry_dateFinish' => 'Fecha Fin',
+                'laundry_dateFinish' => 'Fecha Cierre',
                 'name' => 'Usuario',
                 'laundry_total' => 'Gasto Total',
                 'laundry_cycle' => 'Ciclos',
@@ -1051,7 +1220,320 @@ class FormController extends Controller
     public function deleteLaundry(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'row_number' => ['required', 'integer', 'min:1'],
+            'id' => ['required', 'integer', 'min:1'],
+        ], [
+            'id.required' => 'El número de fila es obligatorio para la eliminación.',
+            'id.integer' => 'El número de fila debe ser un número entero.',
+            'id.min' => 'No se puede eliminar la fila 0.',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation Failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $id = $request->input('id');
+
+        $rs_laundry = dpb_laundry::find($id);
+        $rs_laundry->laundry_status = 0;
+        $rs_laundry->save();
+
+        $sheetName = $this->sheet['laundry'];
+        $result = $this->removeTable($sheetName, $id);
+        return response()->json(['message' => $result['message']], $result['HTTPcode']);
+    }
+
+
+    public function showInventoryHkForm()
+    {
+        return view('forms.inventoryhk_partial');
+    }
+    public function submitInventoryHk(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'fechaRegistro' => ['required', 'date_format:Y-m-d', 'before_or_equal:' . Carbon::now()->format('Y-m-d')],
+            'sheet_k' => ['nullable', 'integer', 'min:0'],
+            'sheet_q' => ['nullable', 'integer', 'min:0'],
+            'pillowcase_k' => ['nullable', 'integer', 'min:0'],
+            'pillowcase_q' => ['nullable', 'integer', 'min:0'],
+            'pillow_k' => ['nullable', 'integer', 'min:0'],
+            'pillow_q' => ['nullable', 'integer', 'min:0'],
+            'mattressprotector_k' => ['nullable', 'integer', 'min:0'],
+            'mattressprotector_q' => ['nullable', 'integer', 'min:0'],
+            'towel_blank' => ['nullable', 'integer', 'min:0'],
+            'hand_towel' => ['nullable', 'integer', 'min:0'],
+            'foot_towel' => ['nullable', 'integer', 'min:0'],
+            'face_towel' => ['nullable', 'integer', 'min:0'],
+            'towel_blue' => ['nullable', 'integer', 'min:0'],
+            'blanket_blue' => ['nullable', 'integer', 'min:0'],
+            'blanket_green' => ['nullable', 'integer', 'min:0'],
+            'duveth_k' => ['nullable', 'integer', 'min:0'],
+            'duveth_q' => ['nullable', 'integer', 'min:0'],
+            'cover_k' => ['nullable', 'integer', 'min:0'],
+            'cover_q' => ['nullable', 'integer', 'min:0'],
+            'bedskirt_k' => ['nullable', 'integer', 'min:0'],
+            'bedskirt_q' => ['nullable', 'integer', 'min:0'],
+        ], [
+            'fechaRegistro.required' => 'La fecha del inventario es obligatoria.',
+            'fechaRegistro.date_format' => 'El formato de la fecha no es válido (debe ser AAAA-MM-DD).',
+            'fechaRegistro.before_or_equal' => 'La fecha del inventario no puede ser futura.',
+            // Mensajes genéricos para los campos numéricos. Puedes personalizar si es necesario.
+            '*.integer' => 'El campo :attribute debe ser un número entero.',
+            '*.min' => 'El campo :attribute no puede ser negativo.',
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation Failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        $validatedData = $validator->validated();
+        $userId = Auth::id();
+
+        $qry_dateuser = dpb_inventoryhk::where('inventoryhk_date', $validatedData['fechaRegistro'])->where('inventoryhk_userid', $userId)->where('inventoryhk_status',1);
+        if ($qry_dateuser->count() > 0) {
+            return response()->json(['status' => 'fail', 'message' => 'Registro ya existe.'], 422);                
+        }
+
+        $qry_date = dpb_inventoryhk::where('inventoryhk_date', $validatedData['fechaRegistro'])->where('inventoryhk_status',1);
+        if ($qry_date->count() > 0) {
+            $validatedData['databaseId'] = $qry_date->first()->inventoryhk_id;
+            return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData], 200);
+        }
+
+        $m_inventoryhk = new dpb_inventoryhk;
+        $m_inventoryhk->inventoryhk_date        = $validatedData['fechaRegistro'];
+        $m_inventoryhk->inventoryhk_userid      = $userId;
+        $m_inventoryhk->inventoryhk_kSheet          = $validatedData['sheet_k'];
+        $m_inventoryhk->inventoryhk_qSheet          = $validatedData['sheet_q'];
+        $m_inventoryhk->inventoryhk_kPillowcase     = $validatedData['pillowcase_k'];
+        $m_inventoryhk->inventoryhk_qPillowcase     = $validatedData['pillowcase_q'];
+        $m_inventoryhk->inventoryhk_kPillow         = $validatedData['pillow_k'];
+        $m_inventoryhk->inventoryhk_qPillow         = $validatedData['pillow_q'];
+        $m_inventoryhk->inventoryhk_kMattressprotector    = $validatedData['mattressprotector_k'];
+        $m_inventoryhk->inventoryhk_qMattressprotector    = $validatedData['mattressprotector_q'];
+        $m_inventoryhk->inventoryhk_towel           = $validatedData['towel_blank'];
+        $m_inventoryhk->inventoryhk_handTowel       = $validatedData['hand_towel'];
+        $m_inventoryhk->inventoryhk_feetTowel       = $validatedData['foot_towel'];
+        $m_inventoryhk->inventoryhk_faceTowel       = $validatedData['face_towel'];
+        $m_inventoryhk->inventoryhk_poolTowel       = $validatedData['towel_blue'];
+        $m_inventoryhk->inventoryhk_blueBlanket     = $validatedData['blanket_blue'];
+        $m_inventoryhk->inventoryhk_greenBlanket    = $validatedData['blanket_green'];
+        $m_inventoryhk->inventoryhk_kDuvet          = $validatedData['duveth_k'];
+        $m_inventoryhk->inventoryhk_qDuvet          = $validatedData['duveth_q'];
+        $m_inventoryhk->inventoryhk_kCover          = $validatedData['cover_k'];
+        $m_inventoryhk->inventoryhk_qCover          = $validatedData['cover_q'];
+        $m_inventoryhk->inventoryhk_kBedskirt       = $validatedData['bedskirt_k'];
+        $m_inventoryhk->inventoryhk_qBedskirt       = $validatedData['bedskirt_q'];
+        $m_inventoryhk->inventoryhk_status = 1;
+        $m_inventoryhk->save();
+
+        $rowData = [
+            $userId,                                     // Columna A (ej. user_id)
+            $request->input('fechaRegistro'),          // Columna C (ej. Fecha del Inventario)
+            (int) $request->input('sheet_k', 0),          // Columna D (ej. sheet_k). Usamos (int) y 0 por defecto.
+            (int) $request->input('sheet_q', 0),          // Columna E (ej. sheet_q)
+            (int) $request->input('pillowcase_k', 0),     // Columna F (ej. pillowcase_k)
+            (int) $request->input('pillowcase_q', 0),     // Columna G (ej. pillowcase_q)
+            (int) $request->input('pillow_k', 0),         // Columna H (ej. pillow_k)
+            (int) $request->input('pillow_q', 0),         // Columna I (ej. pillow_q)
+            (int) $request->input('mattressprotector_k', 0), // Columna J (ej. mattressprotector_k)
+            (int) $request->input('mattressprotector_q', 0), // Columna K (ej. mattressprotector_q)
+            (int) $request->input('towel_blank', 0),      // Columna L (ej. towel_blank)
+            (int) $request->input('hand_towel', 0),       // Columna M (ej. hand_towel)
+            (int) $request->input('foot_towel', 0),       // Columna N (ej. foot_towel)
+            (int) $request->input('face_towel', 0),       // Columna O (ej. face_towel)
+            (int) $request->input('towel_blue', 0),       // Columna P (ej. towel_blue)
+            (int) $request->input('blanket_blue', 0),     // Columna Q (ej. blanket_blue)
+            (int) $request->input('blanket_green', 0),    // Columna R (ej. blanket_green)
+            (int) $request->input('duveth_k', 0),         // Columna S (ej. duveth_k)
+            (int) $request->input('duveth_q', 0),         // Columna T (ej. duveth_q)
+            (int) $request->input('cover_k', 0),          // Columna U (ej. cover_k)
+            (int) $request->input('cover_q', 0),          // Columna V (ej. cover_q)
+            (int) $request->input('bedskirt_k', 0),       // Columna W (ej. bedskirt_k)
+            (int) $request->input('bedskirt_q', 0),       // Columna X (ej. bedskirt_q)
+            $m_inventoryhk->inventoryhk_id
+        ];
+        $ans = $this->fillTable($this->sheet['inventoryhk'], $rowData, $m_inventoryhk->inventoryhk_id);
+        return response()->json(['message' => $ans['message']], $ans['HTTPcode']);
+    }
+    public function updateInventoryhk(Request $request)
+    {
+        $userId = Auth::id();
+        $validator = Validator::make($request->all(), [
+            'fechaRegistro' => ['required', 'date_format:Y-m-d', 'before_or_equal:' . Carbon::now()->format('Y-m-d')],
+            'sheet_k' => ['nullable', 'integer', 'min:0'],
+            'sheet_q' => ['nullable', 'integer', 'min:0'],
+            'pillowcase_k' => ['nullable', 'integer', 'min:0'],
+            'pillowcase_q' => ['nullable', 'integer', 'min:0'],
+            'pillow_k' => ['nullable', 'integer', 'min:0'],
+            'pillow_q' => ['nullable', 'integer', 'min:0'],
+            'mattressprotector_k' => ['nullable', 'integer', 'min:0'],
+            'mattressprotector_q' => ['nullable', 'integer', 'min:0'],
+            'towel_blank' => ['nullable', 'integer', 'min:0'],
+            'hand_towel' => ['nullable', 'integer', 'min:0'],
+            'foot_towel' => ['nullable', 'integer', 'min:0'],
+            'face_towel' => ['nullable', 'integer', 'min:0'],
+            'towel_blue' => ['nullable', 'integer', 'min:0'],
+            'blanket_blue' => ['nullable', 'integer', 'min:0'],
+            'blanket_green' => ['nullable', 'integer', 'min:0'],
+            'duveth_k' => ['nullable', 'integer', 'min:0'],
+            'duveth_q' => ['nullable', 'integer', 'min:0'],
+            'cover_k' => ['nullable', 'integer', 'min:0'],
+            'cover_q' => ['nullable', 'integer', 'min:0'],
+            'bedskirt_k' => ['nullable', 'integer', 'min:0'],
+            'bedskirt_q' => ['nullable', 'integer', 'min:0'],
+            'databaseId' => ['required', 'numeric', 'min:1'],
+        ], [
+            'fechaRegistro.required' => 'La fecha del inventario es obligatoria.',
+            'fechaRegistro.date_format' => 'El formato de la fecha no es válido (debe ser AAAA-MM-DD).',
+            'fechaRegistro.before_or_equal' => 'La fecha del inventario no puede ser futura.',
+            'databaseId.required' => 'El campo ID es obligatorio.',
+            'databaseId.numeric' => 'El campo ID debe ser un número.',
+            'databaseId.min' => 'El campo ID no puede ser negativo.',
+            // Mensajes genéricos para los campos numéricos. Puedes personalizar si es necesario.
+            '*.integer' => 'El campo :attribute debe ser un número entero.',
+            '*.min' => 'El campo :attribute no puede ser negativo.',
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation Failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        $validatedData = $validator->validated();
+
+        $m_inventoryhk = dpb_inventoryhk::find($validatedData['databaseId']);
+        $m_inventoryhk->inventoryhk_date        = $validatedData['fechaRegistro'];
+        $m_inventoryhk->inventoryhk_userid      = $userId;
+        $m_inventoryhk->inventoryhk_kSheet          = $validatedData['sheet_k'];
+        $m_inventoryhk->inventoryhk_qSheet          = $validatedData['sheet_q'];
+        $m_inventoryhk->inventoryhk_kPillowcase     = $validatedData['pillowcase_k'];
+        $m_inventoryhk->inventoryhk_qPillowcase     = $validatedData['pillowcase_q'];
+        $m_inventoryhk->inventoryhk_kPillow         = $validatedData['pillow_k'];
+        $m_inventoryhk->inventoryhk_qPillow         = $validatedData['pillow_q'];
+        $m_inventoryhk->inventoryhk_kMattressprotector    = $validatedData['mattressprotector_k'];
+        $m_inventoryhk->inventoryhk_qMattressprotector    = $validatedData['mattressprotector_q'];
+        $m_inventoryhk->inventoryhk_towel           = $validatedData['towel_blank'];
+        $m_inventoryhk->inventoryhk_handTowel       = $validatedData['hand_towel'];
+        $m_inventoryhk->inventoryhk_feetTowel       = $validatedData['foot_towel'];
+        $m_inventoryhk->inventoryhk_faceTowel       = $validatedData['face_towel'];
+        $m_inventoryhk->inventoryhk_poolTowel       = $validatedData['towel_blue'];
+        $m_inventoryhk->inventoryhk_blueBlanket     = $validatedData['blanket_blue'];
+        $m_inventoryhk->inventoryhk_greenBlanket    = $validatedData['blanket_green'];
+        $m_inventoryhk->inventoryhk_kDuvet          = $validatedData['duveth_k'];
+        $m_inventoryhk->inventoryhk_qDuvet          = $validatedData['duveth_q'];
+        $m_inventoryhk->inventoryhk_kCover          = $validatedData['cover_k'];
+        $m_inventoryhk->inventoryhk_qCover          = $validatedData['cover_q'];
+        $m_inventoryhk->inventoryhk_kBedskirt       = $validatedData['bedskirt_k'];
+        $m_inventoryhk->inventoryhk_qBedskirt       = $validatedData['bedskirt_q'];
+        $m_inventoryhk->inventoryhk_status = 1;
+        $m_inventoryhk->save();
+
+        // Prepara la fila con los datos actualizados para Google Sheets
+        $newRowData = [
+            $userId,                                     // Columna A (ej. user_id)
+            $request->input('fechaRegistro'),          // Columna C (ej. Fecha del Inventario)
+            (int) $request->input('sheet_k', 0),          // Columna D (ej. sheet_k). Usamos (int) y 0 por defecto.
+            (int) $request->input('sheet_q', 0),          // Columna E (ej. sheet_q)
+            (int) $request->input('pillowcase_k', 0),     // Columna F (ej. pillowcase_k)
+            (int) $request->input('pillowcase_q', 0),     // Columna G (ej. pillowcase_q)
+            (int) $request->input('pillow_k', 0),         // Columna H (ej. pillow_k)
+            (int) $request->input('pillow_q', 0),         // Columna I (ej. pillow_q)
+            (int) $request->input('mattressprotector_k', 0), // Columna J (ej. mattressprotector_k)
+            (int) $request->input('mattressprotector_q', 0), // Columna K (ej. mattressprotector_q)
+            (int) $request->input('towel_blank', 0),      // Columna L (ej. towel_blank)
+            (int) $request->input('hand_towel', 0),       // Columna M (ej. hand_towel)
+            (int) $request->input('foot_towel', 0),       // Columna N (ej. foot_towel)
+            (int) $request->input('face_towel', 0),       // Columna O (ej. face_towel)
+            (int) $request->input('towel_blue', 0),       // Columna P (ej. towel_blue)
+            (int) $request->input('blanket_blue', 0),     // Columna Q (ej. blanket_blue)
+            (int) $request->input('blanket_green', 0),    // Columna R (ej. blanket_green)
+            (int) $request->input('duveth_k', 0),         // Columna S (ej. duveth_k)
+            (int) $request->input('duveth_q', 0),         // Columna T (ej. duveth_q)
+            (int) $request->input('cover_k', 0),          // Columna U (ej. cover_k)
+            (int) $request->input('cover_q', 0),          // Columna V (ej. cover_q)
+            (int) $request->input('bedskirt_k', 0),       // Columna W (ej. bedskirt_k)
+            (int) $request->input('bedskirt_q', 0),       // Columna X (ej. bedskirt_q)
+            $m_inventoryhk->inventoryhk_id
+        ];
+
+        $ans = $this->updateTable($this->sheet['inventoryhk'], $validatedData['databaseId'], $newRowData);
+        if ($ans['status'] === 'success') {
+            return response()->json(['status' => 'success', 'message' => $ans['message']], $ans['HTTPcode']);
+        } else {
+            return response()->json(['status' => 'fail', 'message' => $ans['message']], $ans['HTTPcode']);
+        }
+    }
+    public function showInventoryHkRecords(Request $request)
+    {
+        $filterDate = $request->input('filter_date', Carbon::now()->format('Y-m-d'));
+        $year = Carbon::parse($filterDate)->year;
+        $month = Carbon::parse($filterDate)->month;
+
+        $query = dpb_inventoryhk::query();
+
+        if ($request->has('filter_date') && $request->input('filter_date')) {
+            $query->whereYear('inventoryhk_date', $year)
+                  ->whereMonth('inventoryhk_date', $month);
+        } else {
+            $query->whereYear('inventoryhk_date', Carbon::now()->year)
+                  ->whereMonth('inventoryhk_date', Carbon::now()->month);
+        }
+        
+        $currentUser = Auth::user();
+        $currentUserId = $currentUser->id;
+        $isAdmin = $currentUser->hasRole('Admin');
+
+        try {
+            if ($isAdmin) {
+                $records = $query->orderBy('inventoryhk_status', 'DESC')->orderBy('inventoryhk_date', 'DESC')
+                    ->join('users', 'users.id', 'dpb_inventoryhks.inventoryhk_userid')->get();
+            } else {
+                $records = $query->orderBy('inventoryhk_status', 'DESC')->orderBy('inventoryhk_date', 'DESC')
+                ->where('dpb_laundries.inventoryhk_userid', $currentUserId)
+                ->join('users', 'users.id', 'dpb_laundries.inventoryhk_userid')->get();
+            }
+            
+            $displayHeaders = [
+                'inventoryhk_date' => 'Fecha',
+                'name' => 'Usuario',
+                'inventoryhk_kSheet' => 'Sabanas K',
+                'inventoryhk_qSheet' => 'Sabanas Q',
+                'inventoryhk_kPillowcase' => 'Funda K',
+                'inventoryhk_qPillowcase' => 'Funda Q',
+                'inventoryhk_kPillow' => 'Almohada K',
+                'inventoryhk_qPillow' => 'Almohada Q',
+                'inventoryhk_kMattressprotector' => 'Protector K',
+                'inventoryhk_qMattressprotector' => 'Protector Q',
+                'inventoryhk_towel' => 'Toalla',
+                'inventoryhk_handTowel' => 'Toalla p/Mano',
+                'inventoryhk_feetTowel' => 'Toalla p/Pies',
+                'inventoryhk_faceTowel' => 'Toalla p/Rostro',
+                'inventoryhk_poolTowel' => 'Toalla Piscina',
+                'inventoryhk_blueBlanket' => 'Frazada Azul',
+                'inventoryhk_greenBlanket' => 'Frazada Verde',
+                'inventoryhk_kDuvet' => 'Duvet K',
+                'inventoryhk_qDuvet' => 'Duvet Q',
+                'inventoryhk_kCover' => 'Cover K',
+                'inventoryhk_qCover' => 'Cover Q',
+                'inventoryhk_kBedskirt' => 'Faldon K',
+                'inventoryhk_qBedskirt' => 'Faldon Q',
+                'inventoryhk_status' => 'Estado'
+            ];
+            return view('forms.inventoryhk_records', compact('displayHeaders', 'records', 'filterDate'));
+        } catch (\Exception $e) {
+            Log::error('Error al cargar registros de Lavandería: ' . $e->getMessage());
+            return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
+        }
+
+    }
+    public function deleteInventoryHk(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'id' => ['required', 'integer', 'min:1'], // Mínimo 2 porque la fila 1 son encabezados
         ], [
             'row_number.required' => 'El número de fila es obligatorio para la eliminación.',
             'row_number.integer' => 'El número de fila debe ser un número entero.',
@@ -1064,22 +1546,19 @@ class FormController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
+        $id = $request->input('id');
 
-        $rowNumber = $request->input('row_number');
-        $result = $this->removeTable('g', $rowNumber);
-        return response()->json([
-            'message' => $result['message'],
-        ], $result['HTTPcode']);
+        $rs_inventoryhk = dpb_inventoryhk::find($id);
+        $rs_inventoryhk->inventoryhk_status = 0;
+        $rs_inventoryhk->save();
+
+        $sheetName = $this->sheet['inventoryhk'];
+        $result = $this->removeTable($sheetName, $id);
+        return response()->json(['message' => $result['message']], $result['HTTPcode']);
     }
 
 
-    protected $auditorHeadersMap = [
-        4 => 'Fecha',
-        0 => 'AB',
-        1 => 'Otro',
-        2 => 'Usuario',
-        3 => 'Creacion',
-    ];
+
     public function showAuditorForm()
     {
         return view('forms.auditor_partial');
@@ -1102,13 +1581,32 @@ class FormController extends Controller
             'fechaRegistro.date' => 'El campo Fecha del Registro debe ser una fecha válida.',
             'fechaRegistro.before_or_equal' => 'La Fecha del Registro no puede ser mayor a la fecha actual.',
         ]);
-
         if ($validator->fails()) {
             return response()->json([
                 'message' => 'Validation Failed',
                 'errors' => $validator->errors()
             ], 422);
         }
+        $validatedData = $validator->validated();
+
+        $userId = Auth::id();
+        $qry_dateuser = dpb_sale::where('sale_date', $validatedData['fechaRegistro'])->where('income_userid', $userId)->where('income_status',1);
+        if ($qry_dateuser->count() > 0) {
+            return response()->json(['status' => 'fail', 'message' => 'Registro ya existe.'], 422);                
+        }
+
+        $qry_date = dpb_sale::where('sale_date', $validatedData['fechaRegistro'])->where('income_status',1);
+        if ($qry_date->count() > 0) {
+            $validatedData['databaseId'] = $qry_date->first()->sale_id;
+            return response()->json(['status' => 'confirm', 'message' => 'Registro ya existe, ¿Desea sobreescribirlo?.', 'data' => $validatedData], 200);
+        }
+
+        $m_sale = new dpb_sale;
+        $m_sale->income_ab        = $validatedData['montoAB'];
+        $m_sale->income_other     = $validatedData['montoOtro'];
+        $m_sale->income_userid    = $userId;
+        $m_sale->income_status = 1;
+        $m_sale->save();
 
         $min = 15;
         $max = 9999;
@@ -1137,10 +1635,10 @@ class FormController extends Controller
             //            mt_rand($min, $max), // Columna 8 (índice 7)
             //            mt_rand($min, $max), // Columna 21 (índice 20)
             //            mt_rand($min, $max), // Columna 22 (índice 21)
-            //            mt_rand($min, $max), // Columna 23 (índice 22)
             $request->input('fechaRegistro'),     // Columna 24 (índice 23) - fechaRegistro
+            $m_sale->sale_id
         ];
-        $ans = $this->fillTable('l', $rowData, $request->input('fechaRegistro'), $userId);
+        $ans = $this->fillTable($this->sheet['sale'], $rowData, $m_sale->sale_id);
         return response()->json(['message' => $ans['message']], $ans['HTTPcode']);
     }
     public function showAuditorRecords()
@@ -1222,324 +1720,4 @@ class FormController extends Controller
     }
 
 
-    public function showInventoryHkForm()
-    {
-        return view('forms.inventoryhk_partial');
-    }
-    public function submitInventoryHk(Request $request)
-    {
-        // 1. Validación de los datos
-        $validator = Validator::make($request->all(), [
-            'fechaInventario' => ['required', 'date_format:Y-m-d', 'before_or_equal:' . Carbon::now()->format('Y-m-d')],
-            'sheet_k' => ['nullable', 'integer', 'min:0'],
-            'sheet_q' => ['nullable', 'integer', 'min:0'],
-            'pillowcase_k' => ['nullable', 'integer', 'min:0'],
-            'pillowcase_q' => ['nullable', 'integer', 'min:0'],
-            'pillow_k' => ['nullable', 'integer', 'min:0'],
-            'pillow_q' => ['nullable', 'integer', 'min:0'],
-            'mattressprotector_k' => ['nullable', 'integer', 'min:0'],
-            'mattressprotector_q' => ['nullable', 'integer', 'min:0'],
-            'towel_blank' => ['nullable', 'integer', 'min:0'],
-            'hand_towel' => ['nullable', 'integer', 'min:0'],
-            'foot_towel' => ['nullable', 'integer', 'min:0'],
-            'face_towel' => ['nullable', 'integer', 'min:0'],
-            'towel_blue' => ['nullable', 'integer', 'min:0'],
-            'blanket_blue' => ['nullable', 'integer', 'min:0'],
-            'blanket_green' => ['nullable', 'integer', 'min:0'],
-            'duveth_k' => ['nullable', 'integer', 'min:0'],
-            'duveth_q' => ['nullable', 'integer', 'min:0'],
-            'cover_k' => ['nullable', 'integer', 'min:0'],
-            'cover_q' => ['nullable', 'integer', 'min:0'],
-            'bedskirt_k' => ['nullable', 'integer', 'min:0'],
-            'bedskirt_q' => ['nullable', 'integer', 'min:0'],
-        ], [
-            'fechaInventario.required' => 'La fecha del inventario es obligatoria.',
-            'fechaInventario.date_format' => 'El formato de la fecha no es válido (debe ser AAAA-MM-DD).',
-            'fechaInventario.before_or_equal' => 'La fecha del inventario no puede ser futura.',
-            // Mensajes genéricos para los campos numéricos. Puedes personalizar si es necesario.
-            '*.integer' => 'El campo :attribute debe ser un número entero.',
-            '*.min' => 'El campo :attribute no puede ser negativo.',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation Failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        // Datos comunes
-        $userId = Auth::id(); // ID del usuario autenticado
-        $timestampInsercion = Carbon::now()->toDateTimeString(); // Timestamp de la inserción
-
-        // !IMPORTANTE!: Configura este array '$rowData' para que el orden de los datos
-        //              coincida con las columnas exactas en tu hoja de Google Sheets para Inventario HK.
-        //              Si tienes columnas de relleno, usa 'mt_rand()' o déjalas vacías según necesites.
-        $rowData = [
-            $userId,                                     // Columna A (ej. user_id)
-            $timestampInsercion,                         // Columna B (ej. timestamp de inserción)
-            $request->input('fechaInventario'),          // Columna C (ej. Fecha del Inventario)
-            (int) $request->input('sheet_k', 0),          // Columna D (ej. sheet_k). Usamos (int) y 0 por defecto.
-            (int) $request->input('sheet_q', 0),          // Columna E (ej. sheet_q)
-            (int) $request->input('pillowcase_k', 0),     // Columna F (ej. pillowcase_k)
-            (int) $request->input('pillowcase_q', 0),     // Columna G (ej. pillowcase_q)
-            (int) $request->input('pillow_k', 0),         // Columna H (ej. pillow_k)
-            (int) $request->input('pillow_q', 0),         // Columna I (ej. pillow_q)
-            (int) $request->input('mattressprotector_k', 0), // Columna J (ej. mattressprotector_k)
-            (int) $request->input('mattressprotector_q', 0), // Columna K (ej. mattressprotector_q)
-            (int) $request->input('towel_blank', 0),      // Columna L (ej. towel_blank)
-            (int) $request->input('hand_towel', 0),       // Columna M (ej. hand_towel)
-            (int) $request->input('foot_towel', 0),       // Columna N (ej. foot_towel)
-            (int) $request->input('face_towel', 0),       // Columna O (ej. face_towel)
-            (int) $request->input('towel_blue', 0),       // Columna P (ej. towel_blue)
-            (int) $request->input('blanket_blue', 0),     // Columna Q (ej. blanket_blue)
-            (int) $request->input('blanket_green', 0),    // Columna R (ej. blanket_green)
-            (int) $request->input('duveth_k', 0),         // Columna S (ej. duveth_k)
-            (int) $request->input('duveth_q', 0),         // Columna T (ej. duveth_q)
-            (int) $request->input('cover_k', 0),          // Columna U (ej. cover_k)
-            (int) $request->input('cover_q', 0),          // Columna V (ej. cover_q)
-            (int) $request->input('bedskirt_k', 0),       // Columna W (ej. bedskirt_k)
-            (int) $request->input('bedskirt_q', 0),       // Columna X (ej. bedskirt_q)
-        ];
-        $values = [$rowData]; // La API espera un array de arrays para las filas
-
-        try {
-            // Configuración y envío a Google Sheets
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS);
-            $service = new Sheets($client);
-            $spreadsheetId = config('google.sheet_id');
-            // Hoja de destino en Google Sheets para Inventario HK
-            // ¡IMPORTANTE! Asegúrate de que esta hoja exista y tenga el nombre correcto.
-            $sheetName = 'k'; // <--- REEMPLAZA 'j' con el nombre real de tu hoja de Google Sheets para Inventario HK
-
-            // --- INICIO DE LA VERIFICACIÓN DE DUPLICADOS ---
-            $requestedDate = $request->input('fechaInventario'); // La fecha que el usuario intenta registrar
-
-            // Rango para leer: Asume que el user_id está en la columna A y la fechaInventario en la columna C
-            // Ajusta este rango si tus columnas para user_id y fechaInventario están en otro lugar.
-            $readRange = $sheetName . '!A:C'; // Lee user_id (Col A), timestamp_insercion (Col B), fechaInventario (Col C)
-            $response = $service->spreadsheets_values->get($spreadsheetId, $readRange);
-            $existingRows = $response->getValues();
-
-            if ($existingRows) {
-                // Ignora la fila de encabezados si existe (asume que la primera fila es de encabezados)
-                $dataRows = array_slice($existingRows, 1);
-
-                foreach ($dataRows as $row) {
-                    // !IMPORTANTE!: Ajusta los índices [0] y [2] según la posición REAL
-                    //              de user_id y fechaInventario en tu Google Sheet.
-                    $existingUserId = $row[0] ?? null; // Columna A (índice 0)
-                    $existingDate = $row[2] ?? null;   // Columna C (índice 2)
-
-                    // Compara el user_id y la fecha (asegúrate de que los tipos de datos coincidan si es necesario)
-                    if ($existingUserId == $userId && $existingDate == $requestedDate) {
-                        Log::warning('Intento de registro duplicado de Inventario HK detectado.', [
-                            'user_id' => $userId,
-                            'fecha' => $requestedDate,
-                        ]);
-                        return response()->json([
-                            'message' => 'Ya existe un registro de inventario para esta fecha y usuario. No se permite duplicar.'
-                        ], 409); // 409 Conflict es un código HTTP apropiado para este error
-                    }
-                }
-            }
-            // --- FIN DE LA VERIFICACIÓN DE DUPLICADOS ---
-
-
-            $range = $sheetName . '!A2'; // Se añadirán datos a partir de la celda A2 en la hoja definida.
-
-            $body = new ValueRange([
-                'values' => $values
-            ]);
-
-            $params = [
-                'valueInputOption' => 'RAW' // 'RAW' para que Google Sheets interprete el tipo de dato
-            ];
-
-            $result = $service->spreadsheets_values->append($spreadsheetId, $range, $body, $params);
-
-            // Manejo de la respuesta de la API y retorno de éxito/error
-            if ($result->getUpdates() && $result->getUpdates()->getUpdatedRows() > 0) {
-                Log::info('Datos de Inventario HK guardados con éxito:', $request->all());
-                return response()->json(['message' => 'Inventario HK registrado exitosamente.'], 200);
-            } else {
-                Log::error('Fallo al añadir fila de Inventario HK a Google Sheet, no se actualizaron filas.', ['result' => $result]);
-                return response()->json(['message' => 'Hubo un problema al guardar el Inventario HK.'], 500);
-            }
-
-        } catch (\Exception $e) {
-            Log::error('Error al guardar datos de Inventario HK: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Error en el servidor al comunicarse con Google Sheets.', 'error' => $e->getMessage()], 500);
-        }
-    }
-    public function showInventoryHkRecords()
-    {
-        $sheetName = 'k'; // ¡IMPORTANTE! Confirma que 'j' es el nombre exacto de tu hoja de Inventario HK
-        $spreadsheetId = config('google.sheet_id');
-        $limitRows = 11; // Límite de filas a mostrar
-
-        $currentUser = Auth::user();
-        $currentUserId = $currentUser->id;
-        // ¡IMPORTANTE! Asegúrate de que tu modelo User tenga un método 'hasRole' o similar
-        // Si no usas Spatie/Laravel-Permission, necesitarás otra forma de verificar si es admin.
-        // Por ejemplo, si tienes una columna 'is_admin' en tu tabla de usuarios: $isAdmin = $currentUser->is_admin;
-        $isAdmin = $currentUser->hasRole('Admin'); // Usando el método hasRole de Spatie/Laravel-Permission
-
-        try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS_READONLY);
-            $service = new Sheets($client);
-
-            // Siempre lee el rango completo para poder filtrar correctamente si no es admin.
-            // Ajusta 'A:X' según la última columna de datos relevantes.
-            $fullRange = $sheetName . '!A:X';
-            $response = $service->spreadsheets_values->get($spreadsheetId, $fullRange);
-            $values = $response->getValues();
-
-            $displayHeaders = [];
-            $records = [];
-
-            $customHeadersMap = [
-                0 => 'ID Usuario',     // Columna A (ID del usuario que creó el registro)
-                1 => 'Fecha/Hora',     // Columna B (Timestamp de creación del registro)
-                2 => 'Fecha Inventario',// Columna C (Fecha del inventario)
-                3 => 'Sábana King',    // Columna D
-                4 => 'Sábana Queen',   // Columna E
-                5 => 'Funda King',     // Columna F
-                6 => 'Funda Queen',    // Columna G
-                7 => 'Almohadas King', // Columna H
-                8 => 'Almohadas Queen',// Columna I
-                9 => 'Protector King', // Columna J
-                10 => 'Protector Queen',// Columna K
-                11 => 'Toalla Blanca',  // Columna L
-                12 => 'Toalla P/Mano',  // Columna M
-                13 => 'Toalla P/Pie',   // Columna N
-                14 => 'Toalla Facial',  // Columna O
-                15 => 'Toalla Azul',    // Columna P
-                16 => 'Frazada Azul',   // Columna Q
-                17 => 'Frazada Verde',  // Columna R
-                18 => 'Duvet King',     // Columna S
-                19 => 'Duvet Queen',    // Columna T
-                20 => 'Cubre Colchón King',// Columna U
-                21 => 'Cubre Colchón Queen',// Columna V
-                22 => 'Faldón King',    // Columna W
-                23 => 'Faldón Queen',   // Columna X
-            ];
-
-            // Construye los encabezados a mostrar basándose en el mapeo
-            foreach ($customHeadersMap as $colIndex => $customName) {
-                $displayHeaders[$colIndex] = $customName;
-            }
-
-            if (!empty($values)) {
-                $headerRow = array_shift($values); // Remueve la primera fila (encabezados de la hoja)
-                $filteredRows = [];
-                foreach ($values as $index => $row) {
-                    $rowUserId = $row[0] ?? null; // Obtener el ID de usuario de la fila
-                    if ($isAdmin || (string) $rowUserId === (string) $currentUserId) {
-                        // Añadir el número de fila real de Google Sheets (importante para eliminación)
-                        // El +2 es porque los datos empiezan en la fila 2 (después de encabezado)
-                        // y el $values array es 0-indexado desde la primera fila de datos.
-                        $recordData = ['row_number_gs' => ($index + 2)];
-                        $recordData['data_cols'] = [];
-                        // Mapea los datos de la fila de Google Sheets a la estructura esperada por la vista
-                        foreach ($displayHeaders as $colIndex => $headerName) {
-                            $recordData['data_cols'][$colIndex] = $row[$colIndex] ?? '';
-                        }
-                        $filteredRows[] = $recordData;
-                    }
-                }
-
-                // Después de filtrar, aplicamos el límite de 11 filas (las más recientes)
-                // Si el usuario es administrador, verá las últimas 11 de *todos* los registros.
-                // Si no es administrador, verá las últimas 11 de *sus propios* registros.
-                $records = array_slice($filteredRows, -$limitRows);
-            }
-
-            return view('forms.inventoryhk_records', compact('displayHeaders', 'records'));
-
-        } catch (\Exception $e) {
-            Log::error('Error al cargar registros de Inventario HK: ' . $e->getMessage());
-            return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
-        }
-    }
-    public function deleteInventoryHk(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'row_number' => ['required', 'integer', 'min:1'], // Mínimo 2 porque la fila 1 son encabezados
-        ], [
-            'row_number.required' => 'El número de fila es obligatorio para la eliminación.',
-            'row_number.integer' => 'El número de fila debe ser un número entero.',
-            'row_number.min' => 'No se puede eliminar la fila 0.',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'message' => 'Validation Failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        $rowNumber = $request->input('row_number');
-        $sheetName = 'k';
-
-        try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS); // Necesita permisos de escritura/edición
-            $service = new Sheets($client);
-            $spreadsheetId = config('google.sheet_id');
-
-            // --- Obtener el sheetId de la hoja por su nombre ---
-            // Esto es necesario para la operación deleteDimension
-            $targetSheetId = null;
-            $spreadsheet = $service->spreadsheets->get($spreadsheetId);
-            foreach ($spreadsheet->getSheets() as $sheet) {
-                if ($sheet->getProperties()->getTitle() === $sheetName) {
-                    $targetSheetId = $sheet->getProperties()->getSheetId();
-                    break;
-                }
-            }
-
-            if ($targetSheetId === null) {
-                throw new \Exception("La hoja '{$sheetName}' no fue encontrada en el Spreadsheet para eliminación.");
-            }
-            // --- FIN de Obtener sheetId ---
-
-            // Crear la solicitud para eliminar la fila
-            $deleteRequest = new DeleteDimensionRequest([
-                'range' => [
-                    'sheetId' => $targetSheetId, // Usamos el ID de la hoja obtenido
-                    'dimension' => 'ROWS',
-                    'startIndex' => $rowNumber - 1, // La API es 0-indexada, si es fila 2, startIndex es 1
-                    'endIndex' => $rowNumber        // endIndex es exclusiva, si startIndex es 1, queremos borrar hasta el índice 2 (fila 2)
-                ]
-            ]);
-
-            $batchUpdateRequest = new BatchUpdateSpreadsheetRequest([
-                'requests' => [
-                    new SheetRequest([
-                        'deleteDimension' => $deleteRequest
-                    ])
-                ]
-            ]);
-
-            $result = $service->spreadsheets->batchUpdate($spreadsheetId, $batchUpdateRequest);
-
-            if ($result->getReplies() && count($result->getReplies()) > 0) {
-                Log::info('Fila eliminada con éxito del Inventario HK:', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'user_id' => Auth::id()]);
-                return response()->json(['message' => 'Registro de Inventario HK eliminado exitosamente.'], 200);
-            } else {
-                Log::error('Fallo al eliminar fila del Inventario HK, no se obtuvo respuesta exitosa.', ['row_number' => $rowNumber, 'sheet' => $sheetName, 'result' => $result, 'user_id' => Auth::id()]);
-                return response()->json(['message' => 'Hubo un problema al eliminar el registro del Inventario HK.'], 500);
-            }
-
-        } catch (\Exception $e) {
-            Log::error('Error al eliminar registro de Inventario HK: ' . $e->getMessage(), ['exception' => $e, 'user_id' => Auth::id()]);
-            return response()->json(['message' => 'Error en el servidor al comunicarse con Google Sheets.', 'error' => $e->getMessage()], 500);
-        }
-    }
 }

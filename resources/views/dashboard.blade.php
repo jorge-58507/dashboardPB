@@ -190,10 +190,12 @@
                         }else if (formUrl === "{{ route('formulario.phonecall.records') }}") {
                             initializePhoneCallRecordsFilter();
                             initializePhoneCallRecordsDeletion();
-                        }else if (formUrl === "{{ route('formulario.inventoryhk.records') }}") {
-                            initializeInventoryHkRecordsDeletion();
                         }else if (formUrl === "{{ route('formulario.laundry.records') }}") {
+                            initializeLaundryRecordsFilter();
                             initializeLaundryRecordsDeletion();
+                        }else if (formUrl === "{{ route('formulario.inventoryhk.records') }}") {
+                            initializeInventoryhkRecordsFilter();
+                            initializeInventoryHkRecordsDeletion();
                         }else if (formUrl === "{{ route('formulario.auditor.records') }}") {
                             initializeAuditorRecordsDeletion();
                         }
