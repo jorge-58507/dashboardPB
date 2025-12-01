@@ -3,7 +3,7 @@
 <div class="bg-white p-6 rounded-lg shadow-lg">
     <h2 class="text-2xl font-bold text-dark-navy mb-6">Inventario de Housekeeping (HK)</h2>
 
-    <form id="inventoryHkForm" action="{{ route('formulario.inventoryhk.submit') }}" onsubmit="disableButton(this);" method="POST">
+    <form id="inventoryHkForm" action="{{ route('formulario.inventoryhk.submit') }}" method="POST">
         @csrf
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -15,8 +15,8 @@
                        required max="{{ \Carbon\Carbon::now()->format('Y-m-d') }}">
                 <p id="error-fechaRegistro" class="text-red-500 text-xs italic hidden"></p>
             </div>
-            <div class="border hidden md:block">&nbsp;</div>
-            <div class="border hidden lg:block">&nbsp;</div>
+            <div class="hidden md:block">&nbsp;</div>
+            <div class="hidden lg:block">&nbsp;</div>
 
             {{-- Sábanas --}}
             <div>

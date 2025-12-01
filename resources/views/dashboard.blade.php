@@ -152,21 +152,30 @@
                     const formUrl = this.dataset.formUrl;
                     
                     formContainer.innerHTML = '<p class="text-center text-dark-navy">Cargando formulario...</p>';
-
                     try {
                         const response = await fetch(formUrl, {
                             headers: {
                                 'X-CSRF-TOKEN': csrfToken,
-                                'Accept': 'text/html'
-                            }
+                                'Accept': 'text/html',
+                                'X-Requested-With': 'XMLHttpRequest' // AGREGAR ESTA LÍNEA
+                            },
+                            credentials: 'same-origin' // AGREGAR ESTA LÍNEA
                         });
+
+                        // AGREGAR ESTA VERIFICACIÓN
+                        if (response.status === 401) {
+                            toastIt("Sesión expirada. Redirigiendo al login...", "warning");
+                            setTimeout(() => {
+                                window.location.href = '/login';
+                            }, 1500);
+                            return;
+                        }
 
                         if (!response.ok) {
                             throw new Error(`HTTP error! status: ${response.status}`);
                         }
                         const htmlContent = await response.text();
                         formContainer.innerHTML = htmlContent;
-
                         // Inicializar el formulario correcto después de que se carga el HTML
                         if (formUrl === "{{ route('formulario.gas_consumption_partial') }}") {
                             initializeGasConsumptionForm();
@@ -184,19 +193,20 @@
                         } else if (formUrl === "{{ route('formulario.gasConsumption.records') }}") { 
                             initializeGasConsumptionRecordsFilter();
                             initializeGasConsumptionRecordsDeletion();
-                        }else if (formUrl === "{{ route('formulario.sales.records') }}") {
+                        } else if (formUrl === "{{ route('formulario.sales.records') }}") {
                             initializeSalesRecordsFilter();
                             initializeSalesRecordsDeletion();
-                        }else if (formUrl === "{{ route('formulario.phonecall.records') }}") {
+                        } else if (formUrl === "{{ route('formulario.phonecall.records') }}") {
                             initializePhoneCallRecordsFilter();
                             initializePhoneCallRecordsDeletion();
-                        }else if (formUrl === "{{ route('formulario.laundry.records') }}") {
+                        } else if (formUrl === "{{ route('formulario.laundry.records') }}") {
                             initializeLaundryRecordsFilter();
                             initializeLaundryRecordsDeletion();
-                        }else if (formUrl === "{{ route('formulario.inventoryhk.records') }}") {
+                        } else if (formUrl === "{{ route('formulario.inventoryhk.records') }}") {
                             initializeInventoryhkRecordsFilter();
                             initializeInventoryHkRecordsDeletion();
-                        }else if (formUrl === "{{ route('formulario.auditor.records') }}") {
+                        } else if (formUrl === "{{ route('formulario.auditor.records') }}") {
+                            initializeAuditorRecordsFilter();
                             initializeAuditorRecordsDeletion();
                         }
                     } catch (error) {
@@ -210,7 +220,6 @@
                         // Usar toastIt directamente
                         toastIt('Error al cargar el formulario: ' + error.message);
                     }
-                    
                 });
             });
            

@@ -3,33 +3,20 @@
 namespace App\Exceptions;
 
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
+use Illuminate\Auth\AuthenticationException;
+use Illuminate\Session\TokenMismatchException;
 use Throwable;
 
 class Handler extends ExceptionHandler
 {
-    /**
-     * A list of exception types with their corresponding custom log levels.
-     *
-     * @var array<class-string<\Throwable>, \Psr\Log\LogLevel::*>
-     */
     protected $levels = [
         //
     ];
 
-    /**
-     * A list of the exception types that are not reported.
-     *
-     * @var array<int, class-string<\Throwable>>
-     */
     protected $dontReport = [
         //
     ];
 
-    /**
-     * A list of the inputs that are never flashed to the session on validation exceptions.
-     *
-     * @var array<int, string>
-     */
     protected $dontFlash = [
         'current_password',
         'password',
@@ -37,14 +24,45 @@ class Handler extends ExceptionHandler
     ];
 
     /**
-     * Register the exception handling callbacks for the application.
-     *
-     * @return void
+     * Handle unauthenticated users.
      */
-    public function register()
+    protected function unauthenticated($request, AuthenticationException $exception)
+    {
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'error' => 'Unauthenticated.',
+                'message' => 'Por favor inicia sesión.'
+            ], 401);
+        }
+
+        return redirect()->guest(route('login'));
+    }
+
+    /**
+     * Render an exception into an HTTP response.
+     */
+    public function render($request, Throwable $exception)
+    {
+        // Manejar TokenMismatchException como si fuera falta de autenticación
+        if ($exception instanceof TokenMismatchException) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'error' => 'Unauthenticated.',
+                    'message' => 'Sesión expirada. Por favor inicia sesión.'
+                ], 401);
+            }
+            return redirect()->guest(route('login'));
+        }
+
+        return parent::render($request, $exception);
+    }
+
+    public function register(): void
     {
         $this->reportable(function (Throwable $e) {
             //
         });
     }
 }
+
+

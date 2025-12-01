@@ -2,7 +2,7 @@
 
 <div class="bg-white p-6 rounded-lg shadow-lg">
     <div class="flex flex-col lg:flex-row justify-between items-center mb-6">
-        <h2 class="text-2xl font-bold text-dark-navy mb-6">Registros de Lavandería</h2>
+        <h2 class="text-2xl font-bold text-dark-navy mb-6">Registros de Inventario HK</h2>
         <form id="inventoryhk-filter-form" action="{{ route('formulario.inventoryhk.records') }}" method="GET" onsubmit="event.preventDefault();" class="mt-4 lg:mt-0">
             <div class="flex items-center gap-2">
                 <input type="date" id="filter_date" name="filter_date" value="{{ $filterDate ?? \Carbon\Carbon::now()->format('Y-m-d') }}"

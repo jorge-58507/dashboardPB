@@ -117,6 +117,8 @@ Route::middleware('auth')->group(function () {
         Route::post('/submit-auditor', [FormController::class, 'submitAuditor'])
             ->middleware(['role:Admin|Auditor'])
             ->name('auditor.submit');
+        Route::put('/submit-auditor', [FormController::class, 'updateAuditor'])
+            ->middleware(['role:Admin|Auditor']);
         Route::get('/auditor-records', [FormController::class, 'showAuditorRecords'])
             ->middleware(['role:Admin|Auditor'])
             ->name('auditor.records');

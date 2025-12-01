@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\dpb_income;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
@@ -13,6 +12,7 @@ use App\Models\dpb_sale;
 use App\Models\dpb_phonecall;
 use App\Models\dpb_laundry;
 use App\Models\dpb_inventoryhk;
+use App\Models\dpb_income;
 
 // Importaciones para Google Sheets API
 use Google\Client;
@@ -24,12 +24,6 @@ use Google\Service\Sheets\DeleteDimensionRequest;
 
 class FormController extends Controller
 {
-    // CONTINUAR CON LA OPCION DE MOSTRAR LOS REGISTROS PARA PODER ELIMINARLOS
-    /**
-     * Muestra el formulario de ingreso de consumo de gas natural.
-     */
-
-    // GUARDAR EN LA BD Y LUEGO EN LA TABLA
     protected $sheet = [
         'gasConsumption' => 'f',
         'sale' => 'h',
@@ -58,7 +52,7 @@ class FormController extends Controller
                     $existingTableId = $row[0] ?? null; // Columna A (índice 0)
                     if ($existingTableId == $databaseId) {
                         Log::warning('Intento de registro duplicado detectado.', ['table_id' => $existingTableId,]);
-                        return ['message' => 'Ya existe este registro. No se permite duplicar.'.$existingTableId.' pp '.$databaseId, 'HTTPcode' => 409];
+                        return ['status' => 'fail', 'message' => 'Ya existe este registro. No se permite duplicar.'.$existingTableId.' pp '.$databaseId, 'HTTPcode' => 409];
                     }
                 }
             }
@@ -77,15 +71,15 @@ class FormController extends Controller
             $result = $service->spreadsheets_values->append($spreadsheetId, $range, $body, $params);
             // Manejo de la respuesta de la API y retorno de éxito/error
             if ($result->getUpdates() && $result->getUpdates()->getUpdatedRows() > 0) {
-                return ['message' => 'Datos guardados con éxito.', 'HTTPcode' => 200];
+                return ['status' => 'success','message' => 'Datos guardados con éxito.', 'HTTPcode' => 200];
             } else {
                 Log::error('Fallo al añadir fila a Google Sheet, no se actualizaron filas.', ['result' => $result]);
-                return ['message' => 'Hubo un problema al guardar los datos.', 'HTTPcode' => 500];
+                return ['status' => 'fail','message' => 'Hubo un problema al guardar los datos.', 'HTTPcode' => 500];
             }
 
         } catch (\Exception $e) {
             Log::error('Error al guardar datos: ' . $e->getMessage(), ['exception' => $e]);
-            return ['message' => 'Error en el servidor al comunicarse con Google Sheets' . $e->getMessage(), 'HTTPcode' => 400];
+            return ['status' => 'fail', 'message' => 'Error en el servidor al comunicarse con Google Sheets' . $e->getMessage(), 'HTTPcode' => 400];
         }
     }
     public function removeTable($sheetName, $databaseId)
@@ -147,7 +141,7 @@ class FormController extends Controller
             if ($result->getReplies() && count($result->getReplies()) > 0) {
                 return ['message' => 'Registro eliminado exitosamente.', 'HTTPcode' => 200];
             } else {
-                return ['message' => 'Hubo un problema al eliminar el registro.', 'HTTPcode' => 200];
+                return ['message' => 'Hubo un problema al eliminar el registro.', 'HTTPcode' => 500];
             }
         } catch (\Exception $e) {
             return ['message' => 'Error en el servidor al comunicarse con Google Sheets.', 'HTTPcode' => 500];
@@ -212,9 +206,43 @@ class FormController extends Controller
         }
     }
 
-    public function fillTableSale($rowData, $sale_date)
+    public function fillTableSale($sale_date)
     {
         $sheetName = $this->sheet['sale'];
+        $rs_sale = dpb_sale::WHERE('sale_date', $sale_date)->WHERE('sale_status',1)->first();
+        $rs_income = dpb_income::WHERE('income_date', $sale_date)->WHERE('income_status',1)->first();
+        $userId = Auth::id();
+
+        $min = 15;
+        $max = 9999;
+        $date = $sale_date ? Carbon::parse($sale_date) : null;
+        $rowData = [
+            mt_rand($min, $max),
+            !empty($rs_sale->sale_corporative)  ? $rs_sale->sale_corporative : 0,
+            mt_rand($min, $max),
+            !empty($rs_sale->sale_national)     ? $rs_sale->sale_national : 0,
+            mt_rand($min, $max),
+            !empty($rs_income['income_other'])  ? $rs_income['income_other'] : 0,
+            $userId,
+            !empty($rs_income['income_ab'])     ? $rs_income['income_ab'] : 0,
+            !empty($rs_sale->sale_callcenter)   ? $rs_sale->sale_callcenter : 0,
+            mt_rand($min, $max),
+            !empty($rs_sale->sale_ota)          ? $rs_sale->sale_ota : 0,
+            mt_rand($min, $max),
+            !empty($rs_sale->sale_international) ? $rs_sale->sale_international : 0,
+            !empty($rs_sale->sale_arenas)       ? $rs_sale->sale_arenas : 0,
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            !empty($rs_sale->created_at)        ? $rs_sale->created_at : 0,
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            !empty($rs_sale->sale_web)          ? $rs_sale->sale_web : 0,
+            mt_rand($min, $max),
+            $date->format('Y-m-d'),
+            !empty($rs_income['income_id'])     ? $rs_income['income_id'] : 0,
+            !empty($rs_sale->sale_id)           ? $rs_sale->sale_id : 0
+        ];
+
         try {
             $client = new Client();
             $client->setAuthConfig(config('google.service_account_credentials_path'));
@@ -237,9 +265,25 @@ class FormController extends Controller
                     }
                 }
             }
-            if (empty($rowNumber)) {
-                $ans = $this->fillTable($this->sheet['sale'],$rowData,0);
-                return $ans;
+            if (empty($rowNumber)) { //INSERTAR LA FILA NUEVA
+                $range = $sheetName . '!A2'; // Se añadirán datos a partir de la celda A2 en la hoja
+
+                $body = new ValueRange([
+                    'values' => [$rowData]
+                ]);
+
+                $params = [
+                    'valueInputOption' => 'RAW'
+                ];
+
+                $result = $service->spreadsheets_values->append($spreadsheetId, $range, $body, $params);
+                // Manejo de la respuesta de la API y retorno de éxito/error
+                if ($result->getUpdates() && $result->getUpdates()->getUpdatedRows() > 0) {
+                    return ['status' => 'success','message' => 'Datos guardados con éxito.', 'HTTPcode' => 200];
+                } else {
+                    Log::error('Fallo al añadir fila a Google Sheet, no se actualizaron filas.', ['result' => $result]);
+                    return ['status' => 'fail','message' => 'Hubo un problema al guardar los datos.', 'HTTPcode' => 500];
+                }
             }
 
             // 2. Construir el rango a actualizar. Ej: 'f!A5:X5'
@@ -271,9 +315,81 @@ class FormController extends Controller
             return ['status' => 'fail', 'message' => 'Error en el servidor al comunicarse con Google Sheets: ' . $e->getMessage(), 'HTTPcode' => 500];
         }
     }
+    public function removeTableSale($sale_date)
+    {
+        $sheetName = $this->sheet['sale'];
+        $qry_sale = dpb_sale::WHERE('sale_date', $sale_date)->WHERE('sale_status',1);
+        $qry_income = dpb_income::WHERE('income_date', $sale_date)->WHERE('income_status',1);
 
+        if ($qry_sale->count() > 0 || $qry_income->count() > 0) {
+            $ans = $this->fillTableSale($sale_date);
+            return $ans;
+        }
 
+        try {
+            $client = new Client();
+            $client->setAuthConfig(config('google.service_account_credentials_path'));
+            $client->addScope(Sheets::SPREADSHEETS);
+            $service = new Sheets($client);
+            $spreadsheetId = config('google.sheet_id');
 
+            $readRange = $sheetName . '!V:W';
+            $response = $service->spreadsheets_values->get($spreadsheetId, $readRange);
+            $existingRows = $response->getValues();
+
+            if ($existingRows) {
+                $dataRows = array_slice($existingRows, 1); //quitar el encabezado
+                foreach ($dataRows as $index => $row) {
+                    $existingTableId = $row[0] ?? null; // Asumiendo que el ID de la BD está en la columna Y (índice 0 de la lectura X:Y)
+                    if ($existingTableId == $sale_date) {
+                        // El número de fila en la hoja es el índice del array + 2 (1 por el encabezado, 1 porque los índices son base 0)
+                        $rowNumber = $index + 2;
+                        break;
+                    }
+                }
+            }
+            if (empty($rowNumber)) {
+                return ['status' => 'fail', 'message' => 'El registro no existe en la tabla.', 'HTTPcode' => 500];
+            }
+            $targetSheetId = null;
+            $spreadsheet = $service->spreadsheets->get($spreadsheetId);
+            foreach ($spreadsheet->getSheets() as $sheet) {
+                if ($sheet->getProperties()->getTitle() === $sheetName) {
+                    $targetSheetId = $sheet->getProperties()->getSheetId();
+                    break;
+                }
+            }
+
+            if ($targetSheetId === null) {
+                throw new \Exception("La hoja '{$sheetName}' no fue encontrada en el Spreadsheet para eliminación.");
+            }
+
+            $deleteRequest = new DeleteDimensionRequest([
+                'range' => [
+                    'sheetId' => $targetSheetId,
+                    'dimension' => 'ROWS',
+                    'startIndex' => $rowNumber-1,
+                    'endIndex' => $rowNumber
+                ]
+            ]);
+
+            $batchUpdateRequest = new BatchUpdateSpreadsheetRequest([
+                'requests' => [
+                    new SheetRequest([ // Usar el nombre de clase completo
+                        'deleteDimension' => $deleteRequest
+                    ])
+                ]
+            ]);
+            $result = $service->spreadsheets->batchUpdate($spreadsheetId, $batchUpdateRequest);
+            if ($result->getReplies() && count($result->getReplies()) > 0) {
+                return ['status' => 'success', 'message' => 'Registro eliminado exitosamente.', 'HTTPcode' => 200];
+            } else {
+                return ['status' => 'fail', 'message' => 'Hubo un problema al eliminar el registro.', 'HTTPcode' => 500];
+            }
+        } catch (\Exception $e) {
+            return ['message' => 'Error en el servidor al comunicarse con Google Sheets.', 'HTTPcode' => 500];
+        }
+    }
 
     public function getGasConsumptionFormPartial()
     {
@@ -580,38 +696,8 @@ class FormController extends Controller
         $m_sale->sale_status = 1;
         $m_sale->save();
 
-        $min = 15;
-        $max = 9999;
-        $rs_data = dpb_sale::WHERE('sale_date', $validatedData['fechaRegistro'])->JOIN('dpb_incomes', 'dpb_incomes.income_date', "=", 'dpb_sales.sale_date')->first();
-
-        $rowData = [
-            mt_rand($min, $max),
-            $m_sale->sale_corporative,
-            mt_rand($min, $max),
-            $m_sale->sale_national,
-            mt_rand($min, $max),
-            !empty($rs_data['income_other']) ? $rs_data['income_other'] : 0,
-            $userId,
-            !empty($rs_data['income_ab']) ? $rs_data['income_ab'] : 0,
-            $m_sale->sale_callcenter,
-            mt_rand($min, $max),
-            $m_sale->sale_ota,
-            mt_rand($min, $max),
-            $m_sale->sale_international,
-            $m_sale->sale_arenas,
-            mt_rand($min, $max),
-            mt_rand($min, $max),
-            $m_sale->created_at,
-            mt_rand($min, $max),
-            mt_rand($min, $max),
-            $m_sale->sale_web,
-            mt_rand($min, $max),
-            $request->input('fechaRegistro'),
-            !empty($rs_data['income_id']) ? $rs_data['income_id'] : 0,
-            $m_sale->sale_id
-        ];
-        $ans = $this->fillTableSale($rowData, $request->input('fechaRegistro'));
-        return response()->json(['message' => $ans['message']], $ans['HTTPcode']);
+        $ans = $this->fillTableSale($validatedData['fechaRegistro']);
+        return response()->json(['status' => $ans['status'], 'message' => $ans['message']], $ans['HTTPcode']);
     }
     public function updateSales(Request $request)
     {
@@ -680,44 +766,51 @@ class FormController extends Controller
         $m_sale->sale_status = 1;
         $m_sale->save();
 
+        $ans = $this->fillTableSale($validatedData['fechaRegistro']);
+
+
+
+
+
+        /*
         // Prepara la fila con los datos actualizados para Google Sheets
         $min = 15;
         $max = 9999;
-        $newRowData = [
+        $rs_data = dpb_sale::WHERE('sale_date', $validatedData['fechaRegistro'])->JOIN('dpb_incomes', 'dpb_incomes.income_date', "=", 'dpb_sales.sale_date')->first();
+        $rowData = [
             mt_rand($min, $max),
-            floatval($request->input('montoCorporativo')),
+            $m_sale->sale_corporative,
             mt_rand($min, $max),
-            floatval($request->input('montoAgenciaNac')),
+            $m_sale->sale_national,
             mt_rand($min, $max),
-            mt_rand($min, $max),
+            !empty($rs_data['income_other']) ? $rs_data['income_other'] : 0,
             $userId,
+            !empty($rs_data['income_ab']) ? $rs_data['income_ab'] : 0,
+            $m_sale->sale_callcenter,
             mt_rand($min, $max),
-            floatval($request->input('montoCallcenter')),
+            $m_sale->sale_ota,
             mt_rand($min, $max),
-            floatval($request->input('montoOTA')),
-            mt_rand($min, $max),
-            floatval($request->input('montoAgenciaInt')),
-            floatval($request->input('montoArenas')),
-            mt_rand($min, $max),
-            mt_rand($min, $max),
-            now()->toDateTimeString(),
+            $m_sale->sale_international,
+            $m_sale->sale_arenas,
             mt_rand($min, $max),
             mt_rand($min, $max),
-            floatval($request->input('montoWeb')),
+            $m_sale->created_at,
             mt_rand($min, $max),
+            mt_rand($min, $max),
+            $m_sale->sale_web,
             mt_rand($min, $max),
             $request->input('fechaRegistro'),
+            !empty($rs_data['income_id']) ? $rs_data['income_id'] : 0,
             $m_sale->sale_id
         ];
+        $ans = $this->fillTableSale($rowData, $request->input('fechaRegistro'));*/
 
-        $ans = $this->updateTable($this->sheet['sale'], $validatedData['databaseId'], $newRowData);
         if ($ans['status'] === 'success') {
             return response()->json(['status' => 'success', 'message' => $ans['message']], $ans['HTTPcode']);
         } else {
             return response()->json(['status' => 'fail', 'message' => $ans['message']], $ans['HTTPcode']);
         }
     }
-    
     public function showSalesRecords(Request $request)
     {
         $filterDate = $request->input('filter_date', Carbon::now()->format('Y-m-d'));
@@ -790,8 +883,8 @@ class FormController extends Controller
         $rs_sale->sale_status = 0;
         $rs_sale->save();
 
-        $result = $this->removeTable($this->sheet['sale'], $sale_id);
-        return response()->json(['message' => $result['message']], $result['HTTPcode']);
+        $result = $this->removeTableSale(date('Y-m-d', strtotime($rs_sale['sale_date'])));
+        return response()->json(['status' => $result['status'], 'message' => $result['message']], $result['HTTPcode']);
     }
 
 
@@ -1554,8 +1647,8 @@ class FormController extends Controller
                     ->join('users', 'users.id', 'dpb_inventoryhks.inventoryhk_userid')->get();
             } else {
                 $records = $query->orderBy('inventoryhk_status', 'DESC')->orderBy('inventoryhk_date', 'DESC')
-                ->where('dpb_laundries.inventoryhk_userid', $currentUserId)
-                ->join('users', 'users.id', 'dpb_laundries.inventoryhk_userid')->get();
+                ->where('dpb_inventoryhks.inventoryhk_userid', $currentUserId)
+                ->join('users', 'users.id', 'dpb_inventoryhks.inventoryhk_userid')->get();
             }
             
             $displayHeaders = [
@@ -1589,16 +1682,15 @@ class FormController extends Controller
             Log::error('Error al cargar registros de Lavandería: ' . $e->getMessage());
             return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
         }
-
     }
     public function deleteInventoryHk(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'id' => ['required', 'integer', 'min:1'], // Mínimo 2 porque la fila 1 son encabezados
         ], [
-            'row_number.required' => 'El número de fila es obligatorio para la eliminación.',
-            'row_number.integer' => 'El número de fila debe ser un número entero.',
-            'row_number.min' => 'No se puede eliminar la fila 0.',
+            'id.required' => 'El número de fila es obligatorio para la eliminación.',
+            'id.integer' => 'El número de fila debe ser un número entero.',
+            'id.min' => 'No se puede eliminar la fila 0.',
         ]);
 
         if ($validator->fails()) {
@@ -1669,12 +1761,12 @@ class FormController extends Controller
         $m_income->income_status    = 1;
         $m_income->save();
 
+        $ans = $this->fillTableSale($validatedData['fechaRegistro']);
+        /*
         $min = 15;
         $max = 9999;
         $userId = Auth::id(); // ID del usuario autenticado
-
         $rs_data = dpb_sale::WHERE('sale_date',$validatedData['fechaRegistro'])->JOIN('dpb_incomes','dpb_incomes.income_date',"=",'dpb_sales.sale_date')->first();
-
         $rowData = [
             mt_rand($min, $max),
             !empty($rs_data['sale_corporative']) ? $rs_data['sale_corporative'] : 0,
@@ -1692,7 +1784,7 @@ class FormController extends Controller
             !empty($rs_data['sale_arenas']) ? $rs_data['sale_arenas'] : 0,
             mt_rand($min, $max),
             mt_rand($min, $max),
-            !empty($rs_data['created_at']) ? $rs_data['created_at'] : 0,
+            !empty($rs_data['created_at']) ? $rs_data['created_at'] : date('Y-m-d H:i:s'),
             mt_rand($min, $max),
             mt_rand($min, $max),
             !empty($rs_data['sale_web']) ? $rs_data['sale_web'] : 0,
@@ -1701,62 +1793,126 @@ class FormController extends Controller
             $m_income->income_id,
             !empty($rs_data['sale_id']) ? $rs_data['sale_id'] : 0
         ];
-        $ans = $this->fillTableSale($rowData, $request->input('fechaRegistro'));
-        return response()->json(['message' => $ans['message']], $ans['HTTPcode']);
+        $ans = $this->fillTableSale($rowData, $request->input('fechaRegistro'));*/
+        return response()->json(['status' => $ans['status'], 'message' => $ans['message']], $ans['HTTPcode']);
     }
-    public function showAuditorRecords()
+    public function updateAuditor(Request $request)
     {
-        $sheetName = 'l';
-        $spreadsheetId = config('google.sheet_id');
-        $limitRows = 11;
+        $userId = Auth::id();
+        $validator = Validator::make($request->all(), [
+            'montoAB' => ['required', 'numeric', 'min:0'],
+            'montoOtro' => ['required', 'numeric', 'min:0'],
+            'fechaRegistro' => ['required', 'date', 'before_or_equal:today'], // La fecha no puede ser futura
+            'databaseId' => ['required', 'numeric', 'min:1'],
+        ], [
+            'montoAB.required' => 'El campo Monto Total Ventas Hospedaje es obligatorio.',
+            'montoAB.numeric' => 'El campo Monto Total Ventas Hospedaje debe ser un número.',
+            'montoAB.min' => 'El campo Monto Total Ventas Hospedaje no puede ser negativo.',
+            'montoOtro.required' => 'El campo Monto Total Ventas Hospedaje es obligatorio.',
+            'montoOtro.numeric' => 'El campo Monto Total Ventas Hospedaje debe ser un número.',
+            'montoOtro.min' => 'El campo Monto Total Ventas Hospedaje no puede ser negativo.',
+            'fechaRegistro.required' => 'El campo Fecha del Registro es obligatorio.',
+            'fechaRegistro.date' => 'El campo Fecha del Registro debe ser una fecha válida.',
+            'fechaRegistro.before_or_equal' => 'La Fecha del Registro no puede ser mayor a la fecha actual.',
+            'databaseId.required' => 'El campo ID es obligatorio.',
+            'databaseId.numeric' => 'El campo ID debe ser un número.',
+            'databaseId.min' => 'El campo ID no puede ser negativo.',
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation Failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+        $validatedData = $validator->validated();
 
+        $m_income = dpb_income::find($validatedData['databaseId']);
+        $m_income->income_ab        = $validatedData['montoAB'];
+        $m_income->income_other     = $validatedData['montoOtro'];
+        $m_income->income_userid    = $userId;
+        $m_income->income_status    = 1;
+        $m_income->save();
+
+        $ans = $this->fillTableSale($validatedData['fechaRegistro']);
+        /*
+        // Prepara la fila con los datos actualizados para Google Sheets
+        $min = 15;
+        $max = 9999;
+        $rs_data = dpb_sale::WHERE('sale_date',$validatedData['fechaRegistro'])->JOIN('dpb_incomes','dpb_incomes.income_date',"=",'dpb_sales.sale_date')->first();
+        $rowData = [
+            mt_rand($min, $max),
+            !empty($rs_data['sale_corporative']) ? $rs_data['sale_corporative'] : 0,
+            mt_rand($min, $max),
+            !empty($rs_data['sale_national']) ? $rs_data['sale_national'] : 0,
+            mt_rand($min, $max),
+            $m_income->income_other,
+            $userId,
+            $m_income->income_ab,
+            !empty($rs_data['sale_callcenter']) ? $rs_data['sale_callcenter'] : 0,
+            mt_rand($min, $max),
+            !empty($rs_data['sale_ota']) ? $rs_data['sale_ota'] : 0,
+            mt_rand($min, $max),
+            !empty($rs_data['sale_international']) ? $rs_data['sale_international'] : 0,
+            !empty($rs_data['sale_arenas']) ? $rs_data['sale_arenas'] : 0,
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            !empty($rs_data['created_at']) ? $rs_data['created_at'] : date('Y-m-d H:i:s'),
+            mt_rand($min, $max),
+            mt_rand($min, $max),
+            !empty($rs_data['sale_web']) ? $rs_data['sale_web'] : 0,
+            mt_rand($min, $max),
+            $request->input('fechaRegistro'),
+            $validatedData['databaseId'],
+            !empty($rs_data['sale_id']) ? $rs_data['sale_id'] : 0
+        ];
+        $ans = $this->fillTableSale($rowData,$validatedData['fechaRegistro']);
+        */
+        if ($ans['status'] === 'success') {
+            return response()->json(['status' => 'success', 'message' => $ans['message']], $ans['HTTPcode']);
+        } else {
+            return response()->json(['status' => 'fail', 'message' => $ans['message']], $ans['HTTPcode']);
+        }
+    }
+    public function showAuditorRecords(Request $request)
+    {
+        $filterDate = $request->input('filter_date', Carbon::now()->format('Y-m-d'));
+        $year = Carbon::parse($filterDate)->year;
+        $month = Carbon::parse($filterDate)->month;
+
+        $query = dpb_income::query();
+
+        if ($request->has('filter_date') && $request->input('filter_date')) {
+            $query->whereYear('income_date', $year)
+                  ->whereMonth('income_date', $month);
+        } else {
+            $query->whereYear('income_date', Carbon::now()->year)
+                  ->whereMonth('income_date', Carbon::now()->month);
+        }
+        
         $currentUser = Auth::user();
         $currentUserId = $currentUser->id;
-        $isAdmin = $currentUser->hasRole('Admin'); // O tu método para verificar admin
+        $isAdmin = $currentUser->hasRole('Admin');
 
         try {
-            $client = new Client();
-            $client->setAuthConfig(config('google.service_account_credentials_path'));
-            $client->addScope(Sheets::SPREADSHEETS_READONLY);
-            $service = new Sheets($client);
-
-            $fullRange = $sheetName . '!A:X';
-            $response = $service->spreadsheets_values->get($spreadsheetId, $fullRange);
-            $values = $response->getValues();
-
-            $displayHeaders = [];
-            $records = [];
-
-            // Usa el mapeo de encabezados específico para ventas
-            $customHeadersMap = $this->auditorHeadersMap;
-
-            foreach ($customHeadersMap as $colIndex => $customName) {
-                $displayHeaders[$colIndex] = $customName;
+            if ($isAdmin) {
+                $records = $query->orderBy('income_status', 'DESC')->orderBy('income_date', 'DESC')
+                    ->join('users', 'users.id', 'dpb_incomes.income_userid')->get();
+            } else {
+                $records = $query->orderBy('income_status', 'DESC')->orderBy('income_date', 'DESC')
+                ->where('dpb_incomes.income_userid', $currentUserId)
+                ->join('users', 'users.id', 'dpb_incomes.income_userid')->get();
             }
-
-            if (!empty($values)) {
-                array_shift($values); // Remueve la fila de encabezados
-                $filteredRows = [];
-                foreach ($values as $index => $row) {
-                    $rowUserId = $row[0] ?? null; // Asume user_id está en la primera columna (índice 0)
-
-                    if ($isAdmin || (string) $rowUserId === (string) $currentUserId) {
-                        $recordData = ['row_number_gs' => ($index + 2)];
-                        $recordData['data_cols'] = [];
-                        foreach ($displayHeaders as $colIndex => $headerName) {
-                            $recordData['data_cols'][$colIndex] = $row[$colIndex] ?? '';
-                        }
-                        $filteredRows[] = $recordData;
-                    }
-                }
-                $filteredRows = array_reverse($filteredRows);
-                $records = array_slice($filteredRows, -$limitRows);
-            }
-
-            return view('forms.auditor_records', compact('displayHeaders', 'records'));
-
+            
+            $displayHeaders = [
+                'income_date' => 'Fecha',
+                'name' => 'Usuario',
+                'income_ab' => 'Ingresos A&B',
+                'income_other' => 'Otros Ingresos',
+                'income_status' => 'Estado'
+            ];
+            return view('forms.auditor_records', compact('displayHeaders', 'records', 'filterDate'));
         } catch (\Exception $e) {
-            Log::error('Error al cargar registros de Ventas: ' . $e->getMessage());
+            Log::error('Error al cargar registros: ' . $e->getMessage());
             return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
         }
     }
@@ -1769,16 +1925,19 @@ class FormController extends Controller
             'row_number.integer' => 'El número de fila debe ser un número entero.',
             'row_number.min' => 'No se puede eliminar la fila 0.',
         ]);
-
         if ($validator->fails()) {
             return response()->json([
                 'message' => 'Validation Failed',
                 'errors' => $validator->errors()
             ], 422);
         }
+        $validatedData = $validator->validated(); // Obtener los datos validados
 
-        $rowNumber = $request->input('row_number');
-        $result = $this->removeTable('l', $rowNumber);
+        $rs_income = dpb_income::find($validatedData['row_number']);
+        $rs_income->income_status = 0;
+        $rs_income->save();
+
+        $result = $this->removeTableSale(date('Y-m-d', strtotime($rs_income['income_date'])));
         return response()->json(['message' => $result['message']], $result['HTTPcode']);
     }
 

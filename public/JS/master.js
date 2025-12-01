@@ -57,7 +57,9 @@ var initializeGasConsumptionForm = function () {
 
         const formData = new FormData(newForm);
         const data = Object.fromEntries(formData.entries());
-
+        const button = newForm.querySelector('button[type="submit"], input[type="submit"]');
+        button.disabled = true;
+        button.textContent = "Enviando información";
         try {
             const response = await fetch(newForm.action, {
                 method: "POST",
@@ -80,7 +82,6 @@ var initializeGasConsumptionForm = function () {
                     confirmButtonText: "Sí, eliminar",
                     cancelButtonText: "Cancelar",
                 });
-
                 if (res.isConfirmed) {
                     const responseData = result.data;
                     try {
@@ -113,6 +114,10 @@ var initializeGasConsumptionForm = function () {
         } catch (error) {
             console.error("Error:", error);
             toastIt("Error de conexión: " + error.message, "error");
+        } finally {
+            // Volvemos a habilitar el botón y restauramos su texto
+            button.disabled = false;
+            button.textContent = "Enviar Datos";
         }
     });
 };
@@ -165,28 +170,22 @@ var initializeGasConsumptionRecordsDeletion = function () {
 
                     if (response.ok) {
                         toastIt(result.message, "success");
-
-                        const rowElement = document.getElementById(
-                            `row-gas-${gasConsumption_id}`
-                        );
+                        const rowElement = document.getElementById(`row-gas-${gasConsumption_id}`);
                         if (rowElement) {
-                            rowElement.remove();
+                            rowElement.className = 'bg-gray-700 text-white';
+                            const totalCell = rowElement.cells.length;
+                            const statusCell = rowElement.cells[totalCell - 2];
+                            statusCell.textContent = 'Inactivo';
+                            const actionCell = rowElement.cells[totalCell - 1];
+                            actionCell.textContent = '';
                         }
                     } else {
-                        const errorMessage =
-                            result.message ||
-                            "Error al eliminar el registro de gas.";
+                        const errorMessage = result.message || "Error al eliminar el registro de gas.";
                         toastIt(errorMessage, "error");
                     }
                 } catch (error) {
-                    console.error(
-                        "Error al enviar la solicitud de eliminación:",
-                        error
-                    );
-                    toastIt(
-                        "Error de conexión al eliminar gas: " + error.message,
-                        "error"
-                    );
+                    console.error("Error al enviar la solicitud de eliminación:",error);
+                    toastIt("Error de conexión al eliminar gas: " + error.message, "error");
                 } finally {
                     button.disabled = false;
                     button.textContent = "Eliminar";
@@ -195,7 +194,6 @@ var initializeGasConsumptionRecordsDeletion = function () {
         }
     });
 };
-
 var initializeGasConsumptionRecordsFilter = function () {
     const form = document.getElementById("gas-filter-form");
     if (!form) return;
@@ -261,6 +259,10 @@ var initializeSalesForm = function () {
             .querySelectorAll(".validation-error")
             .forEach((el) => el.classList.add("hidden"));
 
+        const button = newForm.querySelector('button[type="submit"], input[type="submit"]');
+        button.disabled = true;
+        button.textContent = "Enviando información";
+
         const formData = new FormData(newForm);
         const data = Object.fromEntries(formData.entries());
         try {
@@ -321,15 +323,16 @@ var initializeSalesForm = function () {
         } catch (error) {
             console.error("Error:", error);
             toastIt("Error de conexión: " + error.message); // Usar toastIt directamente
+        } finally {
+            button.disabled = false;
+            button.textContent = "Enviar Datos";
         }
     });
 };
 var initializeSalesRecordsDeletion = function () {
     const recordsContainer = document.getElementById("form-content-container");
     if (!recordsContainer) {
-        console.warn(
-            "Contenedor de registros no encontrado. No se puede inicializar la eliminación de ventas."
-        );
+        console.warn("Contenedor de registros no encontrado. No se puede inicializar la eliminación de ventas.");
         return;
     }
     recordsContainer.addEventListener("click", async function (event) {
@@ -366,8 +369,16 @@ var initializeSalesRecordsDeletion = function () {
                     const result = await response.json();
                     if (response.ok) {
                         toastIt(result.message, "success");
+                        // sombrear la fila visualmente, usando el ID específico de llamadas
                         const rowElement = document.getElementById(`row-sales-${sale_id}`);
-                        if (rowElement) {rowElement.remove();}
+                        if (rowElement) {
+                            rowElement.className = 'bg-gray-700 text-white';
+                            const totalCell = rowElement.cells.length;
+                            const statusCell = rowElement.cells[totalCell - 2];
+                            statusCell.textContent = 'Inactivo';
+                            const actionCell = rowElement.cells[totalCell - 1];
+                            actionCell.textContent = '';
+                        }
                     } else {
                         const errorMessage = result.message || "Error al eliminar el registro de ventas.";
                         toastIt(errorMessage, "error");
@@ -447,6 +458,10 @@ var initializePhoneCallForm = function () {
             .querySelectorAll(".validation-error")
             .forEach((el) => el.classList.add("hidden"));
 
+        const button = newForm.querySelector('button[type="submit"], input[type="submit"]');
+        button.disabled = true;
+        button.textContent = "Enviando información";
+
         const formData = new FormData(newForm);
         const data = Object.fromEntries(formData.entries());
 
@@ -492,9 +507,7 @@ var initializePhoneCallForm = function () {
                                 newForm.reset();
                                 toastIt(ans.message, "success");
                             } else {
-                                const errorMessage =
-                                    ans.message ||
-                                    "Error al actualizar el registro.";
+                                const errorMessage = ans.message || "Error al actualizar el registro.";
                                 toastIt(errorMessage, "error");
                             }
                         } catch (error) {
@@ -525,6 +538,9 @@ var initializePhoneCallForm = function () {
         } catch (error) {
             console.error("Error al enviar el formulario de llamadas:", error);
             toastIt("Error de conexión al enviar el formulario de llamadas: " +error.message);
+        } finally {
+            button.disabled = false;
+            button.textContent = "Enviar Datos";
         }
     });
 };
@@ -574,6 +590,11 @@ var initializePhoneCallRecordsDeletion = function () {
                         const rowElement = document.getElementById(`row-phonecall-${rowNumber}`);
                         if (rowElement) {
                             rowElement.className = 'bg-gray-700 text-white';
+                            const totalCell = rowElement.cells.length;
+                            const statusCell = rowElement.cells[totalCell - 2];
+                            statusCell.textContent = 'Inactivo';
+                            const actionCell = rowElement.cells[totalCell - 1];
+                            actionCell.textContent = '';
                         }
                     } else {
                         let errorMessage = result.message || "Error al eliminar el registro de llamadas.";
@@ -648,6 +669,10 @@ var initializeLaundryForm = function () {
         newForm
             .querySelectorAll(".validation-error")
             .forEach((el) => el.classList.add("hidden"));
+
+        const button = newForm.querySelector('button[type="submit"], input[type="submit"]');
+        button.disabled = true;
+        button.textContent = "Enviando información";
 
         const formData = new FormData(newForm);
         const data = Object.fromEntries(formData.entries());
@@ -730,6 +755,9 @@ var initializeLaundryForm = function () {
         } catch (error) {
             console.error("Error:", error);
             toastIt("Error de conexión: " + error.message, "error");
+        } finally {
+            button.disabled = false;
+            button.textContent = "Enviar Datos";
         }
     });
 };
@@ -781,6 +809,11 @@ var initializeLaundryRecordsDeletion = function () {
                         const rowElement = document.getElementById(`row-laundry-${rowNumber}`);
                         if (rowElement) {
                             rowElement.className = 'bg-gray-700 text-white';
+                            const totalCell = rowElement.cells.length;
+                            const statusCell = rowElement.cells[totalCell - 2];
+                            statusCell.textContent = 'Inactivo';
+                            const actionCell = rowElement.cells[totalCell - 1];
+                            actionCell.textContent = '';
                         }
                     } else {
                         let errorMessage = result.message || "Error al eliminar el registro de llamadas.";
@@ -877,6 +910,10 @@ var initializeInventoryHkForm = function () {
             .querySelectorAll(".validation-error")
             .forEach((el) => el.classList.add("hidden"));
 
+        const button = newForm.querySelector('button[type="submit"], input[type="submit"]');
+        button.disabled = true;
+        button.textContent = "Enviando información";
+        
         const formData = new FormData(newForm);
         const data = Object.fromEntries(formData.entries());
 
@@ -952,6 +989,9 @@ var initializeInventoryHkForm = function () {
         } catch (error) {
             console.error("Error al enviar el formulario de Inventario HK:",error);
             toastIt("Error de conexión al enviar el formulario de Inventario HK: " +error.message);
+        } finally { 
+            button.disabled = false;
+            button.textContent = "Enviar Datos";
         }
     });
 };
@@ -1002,6 +1042,11 @@ var initializeInventoryHkRecordsDeletion = function () {
                         const rowElement = document.getElementById(`row-inventoryhk-${rowNumber}`);
                         if (rowElement) {
                             rowElement.className = 'bg-gray-700 text-white';
+                            const totalCell = rowElement.cells.length;
+                            const statusCell = rowElement.cells[totalCell - 2];
+                            statusCell.textContent = 'Inactivo';
+                            const actionCell = rowElement.cells[totalCell - 1];
+                            actionCell.textContent = '';
                         }
                     } else {
                         let errorMessage = result.message || "Error al eliminar el registro de llamadas.";
@@ -1015,7 +1060,6 @@ var initializeInventoryHkRecordsDeletion = function () {
                     button.textContent = "Eliminar";
                 }
             }
-
         }
     });
 };
@@ -1058,8 +1102,6 @@ var initializeInventoryhkRecordsFilter = function () {
 };
 
 
-
-
 var initializeAuditorForm = function () {
     const form = document.getElementById("auditorForm");
     if (!form) return; // Si el formulario no está en el DOM, no hacer nada
@@ -1077,6 +1119,10 @@ var initializeAuditorForm = function () {
         newForm
             .querySelectorAll(".validation-error")
             .forEach((el) => el.classList.add("hidden"));
+
+        const button = newForm.querySelector('button[type="submit"], input[type="submit"]');
+        button.disabled = true;
+        button.textContent = "Enviando información";
 
         const formData = new FormData(newForm);
         const data = Object.fromEntries(formData.entries());
@@ -1150,92 +1196,118 @@ var initializeAuditorForm = function () {
         } catch (error) {
             console.error("Error:", error);
             toastIt("Error de conexión: " + error.message); // Usar toastIt directamente
+        } finally { 
+            button.disabled = false;
+            button.textContent = "Enviar Datos";
         }
     });
 };
 var initializeAuditorRecordsDeletion = function () {
     const recordsContainer = document.getElementById("form-content-container");
     if (!recordsContainer) {
-        console.warn(
-            "Contenedor de registros ('form-content-container') no encontrado. No se puede inicializar la eliminación."
-        );
+        console.warn("Contenedor de registros ('form-content-container') no encontrado. No se puede inicializar la eliminación.");
         return;
     }
-
-    // Usamos delegación de eventos porque los botones 'delete-hk-record' se cargan dinámicamente
-    // después de que la página inicial ha cargado.
     recordsContainer.addEventListener("click", async function (event) {
-        // Verificamos si el clic fue en un botón con la clase 'delete-hk-record'
-        if (event.target.classList.contains("delete-auditor-record")) {
+        if (event.target.classList.contains("delete-income-record")) {
             const button = event.target;
             const rowNumber = button.dataset.rowNumber; // Obtenemos el número de fila de su atributo data
 
-            // Pedimos confirmación al usuario
-            if (
-                !confirm(
-                    `¿Estás seguro de que quieres eliminar el registro de la fila ${rowNumber}? Esta acción es irreversible.`
-                )
-            ) {
-                return; // Si el usuario cancela, no hacemos nada
-            }
+            const res = await Swal.fire({
+                title: "¿Estás seguro?",
+                text: "No podrás revertir esta acción",
+                icon: "warning",
+                showCancelButton: true,
+                confirmButtonColor: "#3085d6",
+                cancelButtonColor: "#d33",
+                confirmButtonText: "Sí, eliminar",
+                cancelButtonText: "Cancelar",
+            });
+            if (res.isConfirmed) {
+                button.disabled = true; // Deshabilitamos el botón para evitar múltiples clics
+                button.textContent = "Eliminando..."; // Cambiamos el texto del botón
+                try {
+                    // Enviamos la solicitud DELETE a la ruta de eliminación
+                    const response = await fetch("/formulario/delete-auditor", {
+                        method: "DELETE",
+                        headers: {
+                            "X-CSRF-TOKEN": document
+                                .querySelector('meta[name="csrf-token"]')
+                                .getAttribute("content"), // Obtenemos el token CSRF
+                            Accept: "application/json",
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({ row_number: rowNumber }), // Enviamos el número de fila
+                    });
 
-            button.disabled = true; // Deshabilitamos el botón para evitar múltiples clics
-            button.textContent = "Eliminando..."; // Cambiamos el texto del botón
+                    const result = await response.json(); // Parseamos la respuesta JSON
 
-            try {
-                // Enviamos la solicitud DELETE a la ruta de eliminación
-                const response = await fetch("/formulario/delete-auditor", {
-                    // const response = await fetch("{{ route('formulario.inventoryhk.delete') }}", {
-                    method: "DELETE",
-                    headers: {
-                        "X-CSRF-TOKEN": document
-                            .querySelector('meta[name="csrf-token"]')
-                            .getAttribute("content"), // Obtenemos el token CSRF
-                        Accept: "application/json",
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ row_number: rowNumber }), // Enviamos el número de fila
-                });
-
-                const result = await response.json(); // Parseamos la respuesta JSON
-
-                if (response.ok) {
-                    // Si la respuesta es exitosa (código 2xx)
-                    toastIt(result.message, "success"); // Mostramos un toast de éxito
-                    // Eliminamos la fila de la tabla visualmente para reflejar el cambio
-                    const rowElement = document.getElementById(
-                        `row-${rowNumber}`
-                    );
-                    if (rowElement) {
-                        rowElement.remove();
+                    if (response.ok) {
+                        toastIt(result.message, "success");
+                        // sombrear la fila visualmente, usando el ID específico de llamadas
+                        const rowElement = document.getElementById(`row-income-${rowNumber}`);                        
+                        if (rowElement) {
+                            rowElement.className = 'bg-gray-700 text-white';
+                            const totalCell = rowElement.cells.length;
+                            const statusCell = rowElement.cells[totalCell - 2];
+                            statusCell.textContent = 'Inactivo';
+                            const actionCell = rowElement.cells[totalCell - 1];
+                            actionCell.textContent = '';
+                        }
+                    } else {
+                        let errorMessage = result.message || "Error al eliminar el registro.";
+                        toastIt(errorMessage, "error"); // Mostramos un toast de error
                     }
-                    // Mostramos un mensaje de éxito en el contenedor de mensajes de la tabla
-                } else {
-                    // Si hubo un error en la respuesta
-                    let errorMessage =
-                        result.message || "Error al eliminar el registro.";
-                    toastIt(errorMessage, "error"); // Mostramos un toast de error
-                    // Mostramos un mensaje de error en el contenedor de mensajes de la tabla
+                } catch (error) {
+                    // Si hay un error de red o de JavaScript
+                    console.error("Error al enviar la solicitud de eliminación:",error);
+                    toastIt("Error de conexión al eliminar: " + error.message,"error");
+                } finally {
+                    // Volvemos a habilitar el botón y restauramos su texto
+                    button.disabled = false;
+                    button.textContent = "Eliminar";
                 }
-            } catch (error) {
-                // Si hay un error de red o de JavaScript
-                console.error(
-                    "Error al enviar la solicitud de eliminación:",
-                    error
-                );
-                toastIt(
-                    "Error de conexión al eliminar: " + error.message,
-                    "error"
-                );
-            } finally {
-                // Volvemos a habilitar el botón y restauramos su texto
-                button.disabled = false;
-                button.textContent = "Eliminar";
             }
         }
     });
 };
+var initializeAuditorRecordsFilter = function () {
+    const form = document.getElementById("income-filter-form");
+    if (!form) return;
 
+    const formContainer = document.getElementById("form-content-container");
+
+    // Clonar para evitar listeners duplicados
+    const oldForm = form.cloneNode(true);
+    form.parentNode.replaceChild(oldForm, form);
+    const newForm = oldForm;
+
+    newForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        const formData = new FormData(newForm);
+        const params = new URLSearchParams(formData);
+        const formUrl = `${newForm.action}?${params.toString()}`;
+
+        formContainer.innerHTML = '<p class="text-center text-dark-navy">Cargando registros...</p>';
+
+        try {
+            const response = await fetch(formUrl, {
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                    Accept: "text/html",
+                },
+            });
+            const htmlContent = await response.text();
+            formContainer.innerHTML = htmlContent;
+            // Re-inicializar los listeners para la nueva tabla
+            initializeAuditorRecordsDeletion();
+            initializeAuditorRecordsFilter();
+        } catch (error) {
+            console.error("Error al filtrar registros:", error);
+            toastIt("Error al cargar los registros: " + error.message, "error");
+        }
+    });
+};
 
 
 
