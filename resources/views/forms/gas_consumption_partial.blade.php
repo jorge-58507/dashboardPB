@@ -1,4 +1,4 @@
-{{-- resources/views/forms/gas_consumption_partial.blade.php --}}
+{{-- resources/views/forms/gas_consumption_partial.blade.php --}} 
 
 <div id="form-messages" class="mb-4"></div>
 
@@ -16,35 +16,35 @@
 
         <div class="form-group">
             <label for="cala">Cala (Consumo):</label>
-            <input type="number" id="cala" name="cala" value="{{ old('cala') }}" step="0.01" required
+            <input type="text" id="cala" name="cala" value="{{ old('cala') }}" step="0.01" required
                    class="shadow appearance-none border border-light-gray rounded w-full py-2 px-3 text-dark-navy leading-tight focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-accent-blue">
             <p id="error-cala" class="validation-error hidden"></p>
         </div>
 
         <div class="form-group">
             <label for="lavanderia">Lavanderia (Consumo):</label>
-            <input type="number" id="lavanderia" name="lavanderia" value="{{ old('lavanderia') }}" step="0.01" required
+            <input type="text" id="lavanderia" name="lavanderia" value="{{ old('lavanderia') }}" step="0.01" required
                    class="shadow appearance-none border border-light-gray rounded w-full py-2 px-3 text-dark-navy leading-tight focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-accent-blue">
             <p id="error-lavanderia" class="validation-error hidden"></p>
         </div>
 
         <div class="form-group">
             <label for="cocina">Cocina (Consumo):</label>
-            <input type="number" id="cocina" name="cocina" value="{{ old('cocina') }}" step="0.01" required
+            <input type="text" id="cocina" name="cocina" value="{{ old('cocina') }}" step="0.01" required
                    class="shadow appearance-none border border-light-gray rounded w-full py-2 px-3 text-dark-navy leading-tight focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-accent-blue">
             <p id="error-cocina" class="validation-error hidden"></p>
         </div>
 
         <div class="form-group">
             <label for="velero">Velero (Consumo):</label>
-            <input type="number" id="velero" name="velero" value="{{ old('velero') }}" step="0.01" required
+            <input type="text" id="velero" name="velero" value="{{ old('velero') }}" step="0.01" required
                    class="shadow appearance-none border border-light-gray rounded w-full py-2 px-3 text-dark-navy leading-tight focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-accent-blue">
             <p id="error-velero" class="validation-error hidden"></p>
         </div>
 
         <div class="form-group">
             <label for="agua">Agua (Consumo):</label>
-            <input type="number" id="agua" name="agua" value="{{ old('agua') }}" step="0.01" required
+            <input type="text" id="agua" name="agua" value="{{ old('agua') }}" step="0.01" required
                    class="shadow appearance-none border border-light-gray rounded w-full py-2 px-3 text-dark-navy leading-tight focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-accent-blue">
             <p id="error-agua" class="validation-error hidden"></p>
         </div>

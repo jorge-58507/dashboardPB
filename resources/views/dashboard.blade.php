@@ -129,11 +129,7 @@
         </div>
     </div>
     <script>
-        // Create a global object to hold our app-specific variables
         window.App = window.App || {}; // Ensures window.App exists
-        // window.App.routes = {
-        //     inventoryhkDelete: "{{ route('formulario.inventoryhk.delete') }}",
-        // };
         window.App.csrfToken = "{{ csrf_token() }}";
     </script>
     <script src="/JS/master.js"></script>
