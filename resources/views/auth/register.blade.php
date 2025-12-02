@@ -1,52 +1,81 @@
-<x-guest-layout>
-    <form method="POST" action="{{ route('register') }}">
+<section>
+    <header>
+        <h2 class="text-lg font-medium text-gray-900">
+            {{ __('Crear Usuario') }}
+        </h2>
+
+        <p class="mt-1 text-sm text-gray-600">
+            {{ __('Asigne el nombre, correo electrónico, contraseña y rol del nuevo usuario.') }}
+        </p>
+    </header>
+
+    {{-- 
+        IMPORTANTE: Cambié la acción de 'route('register')' a 'route('users.store')'
+        para reflejar que esta es una vista de administración. 
+        Asegúrate de que la ruta sea correcta.
+    --}}
+    <form method="POST" action="{{ route('register') }}" class="mt-6 space-y-6">
         @csrf
 
-        <!-- Name -->
         <div>
-            <x-input-label for="name" :value="__('Name')" />
+            <x-input-label for="name" :value="__('Nombre')" />
             <x-text-input id="name" class="block mt-1 w-full" type="text" name="name" :value="old('name')" required autofocus autocomplete="name" />
             <x-input-error :messages="$errors->get('name')" class="mt-2" />
         </div>
 
-        <!-- Email Address -->
         <div class="mt-4">
-            <x-input-label for="email" :value="__('Email')" />
+            <x-input-label for="email" :value="__('Correo Electrónico')" />
             <x-text-input id="email" class="block mt-1 w-full" type="email" name="email" :value="old('email')" required autocomplete="username" />
             <x-input-error :messages="$errors->get('email')" class="mt-2" />
         </div>
 
-        <!-- Password -->
         <div class="mt-4">
-            <x-input-label for="password" :value="__('Password')" />
-
-            <x-text-input id="password" class="block mt-1 w-full"
-                            type="password"
-                            name="password"
-                            required autocomplete="new-password" />
-
+            <x-input-label for="password" :value="__('Contraseña')" />
+            <x-text-input id="password" class="block mt-1 w-full" type="password" name="password" required autocomplete="new-password" />
             <x-input-error :messages="$errors->get('password')" class="mt-2" />
         </div>
 
-        <!-- Confirm Password -->
         <div class="mt-4">
-            <x-input-label for="password_confirmation" :value="__('Confirm Password')" />
-
-            <x-text-input id="password_confirmation" class="block mt-1 w-full"
-                            type="password"
-                            name="password_confirmation" required autocomplete="new-password" />
-
+            <x-input-label for="password_confirmation" :value="__('Repetir Contraseña')" />
+            <x-text-input id="password_confirmation" class="block mt-1 w-full" type="password" name="password_confirmation" required autocomplete="new-password" />
             <x-input-error :messages="$errors->get('password_confirmation')" class="mt-2" />
         </div>
 
-        <div class="flex items-center justify-end mt-4">
-            <a class="underline text-sm text-gray-600 hover:text-gray-900 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500" href="{{ route('login') }}">
-                {{ __('Already registered?') }}
-            </a>
+        <div class="mt-4">
+            <x-input-label for="role_id" :value="__('Rol de Usuario')" />
+            
+            <select id="role_id" name="role_id" required class="border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm mt-1 block w-full">
+                <option value="" disabled selected>{{ __('Seleccione un Rol') }}</option>
+                
+                {{-- Verifica que la variable $roles esté disponible desde el controlador --}}
+                @isset($roles)
+                    {{-- Recorre los roles pasados desde el controlador --}}
+                    @foreach($roles as $role)
+                        {{-- Asegura que el valor enviado es el ID y la etiqueta es el Nombre --}}
+                        <option value="{{ $role->id }}" 
+                            {{-- Mantiene la selección si hubo un error de validación --}}
+                            {{ old('role_id') == $role->id ? 'selected' : '' }}
+                        >
+                            {{ $role->name }}
+                        </option>
+                    @endforeach
+                @endisset
+                
+                {{-- Manejo de error si $roles no está definido (opcional) --}}
+                @empty($roles)
+                    <option disabled>{{ __('No hay roles disponibles.') }}</option>
+                @endempty
+            </select>
+            
+            {{-- Muestra errores de validación para el campo role_id --}}
+            <x-input-error :messages="$errors->get('role_id')" class="mt-2" />
+        </div>
+        {{-- ------------------------------------------------ --}}
 
+        <div class="flex items-center justify-end mt-4">
             <x-primary-button class="ml-4">
-                {{ __('Register') }}
+                {{ __('Crear Usuario') }}
             </x-primary-button>
         </div>
     </form>
-</x-guest-layout>
+</section>

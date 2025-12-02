@@ -56,7 +56,7 @@
                                 Llamadas
                             </button>
                         @endhasanyrole
-                        @hasanyrole('Recepcion|Admin') {{-- Asume que el rol Recepción puede ver estos registros --}}
+                        @hasanyrole('Llamadas|Ventas|Admin') {{-- Asume que el rol Recepción puede ver estos registros --}}
                             <button type="button" class="form-button bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded"
                                     data-form-url="{{ route('formulario.phonecall.records') }}">
                                 Ver Registros Llamadas

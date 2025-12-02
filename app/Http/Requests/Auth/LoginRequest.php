@@ -48,7 +48,12 @@ class LoginRequest extends FormRequest
                 'email' => trans('auth.failed'),
             ]);
         }
+        $user = Auth::user();
 
+        if ($user && $user->user_status === 0) {
+            Auth::logout();
+            throw ValidationException::withMessages(['email' => __('Tu cuenta está inactiva. Por favor, contacta a soporte.'),]);
+        }
         RateLimiter::clear($this->throttleKey());
     }
 

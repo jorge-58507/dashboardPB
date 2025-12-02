@@ -8,6 +8,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Redirect;
 use Illuminate\View\View;
+use Spatie\Permission\Models\Role;
+use App\Models\dpb_gasprice;
 
 class ProfileController extends Controller
 {
@@ -16,8 +18,11 @@ class ProfileController extends Controller
      */
     public function edit(Request $request): View
     {
+        $roles = Role::select('id', 'name')->orderBy('name')->get();
+
         return view('profile.edit', [
             'user' => $request->user(),
+            'roles' => $roles,
         ]);
     }
 
@@ -26,10 +31,25 @@ class ProfileController extends Controller
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
+        $user = $request->user();
         $request->user()->fill($request->validated());
 
         if ($request->user()->isDirty('email')) {
             $request->user()->email_verified_at = null;
+        }
+
+        if ($request->filled('gasPrice')) {
+            $request->validate([
+                'gasPrice' => 'required|numeric|max:999999999|min:0',
+            ]);
+            
+            dpb_gasprice::where('gasprice_status', 1)->update(['gasprice_status' => 0]);
+
+            $m_gasprice = new dpb_gasprice;
+            $m_gasprice->gasprice_userid = $user->id;
+            $m_gasprice->gasprice_price = $request->input('gasPrice');
+            $m_gasprice->gasprice_status = 1;
+            $m_gasprice->save();
         }
 
         $request->user()->save();
@@ -49,8 +69,9 @@ class ProfileController extends Controller
         $user = $request->user();
 
         Auth::logout();
-
-        $user->delete();
+        $user->user_status = 0;
+        $user->save();
+        //$user->delete();
 
         $request->session()->invalidate();
         $request->session()->regenerateToken();

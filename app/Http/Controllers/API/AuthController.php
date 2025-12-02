@@ -26,7 +26,7 @@ class AuthController extends Controller
         ]);
 
         $token = $user->createToken('auth_token')->plainTextToken;
-
+        
         return response()->json([
             'message' => 'User registered successfully',
             'user' => $user,
@@ -43,12 +43,17 @@ class AuthController extends Controller
 
         if (!Auth::attempt($request->only('email', 'password'))) {
             throw ValidationException::withMessages([
-                'email' => ['The provided credentials are incorrect.'],
+                'email' => ['Las credenciales no son correctas.'],
             ]);
         }
 
         $user = User::where('email', $request->email)->firstOrFail();
-        $token = $user->createToken('auth_token')->plainTextToken;
+        if ($user->user_status === 0) {
+            Auth::logout(); // Opcional, pero buena práctica.
+            
+            throw ValidationException::withMessages(['email' => ['Tu cuenta está inactiva. Por favor, contacta a soporte.'],]);
+        }
+        //$token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
             'message' => 'Login successful',

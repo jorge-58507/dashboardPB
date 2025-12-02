@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules;
 use Illuminate\View\View;
+use Spatie\Permission\Models\Role;
 
 class RegisteredUserController extends Controller
 {
@@ -28,24 +29,43 @@ class RegisteredUserController extends Controller
      *
      * @throws \Illuminate\Validation\ValidationException
      */
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request)
+    // public function store(Request $request): RedirectResponse
     {
         $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:'.User::class],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
+            'role_id' => ['required', 'exists:roles,id'],
         ]);
 
         $user = User::create([
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
+            'user_status' => 1
         ]);
 
-        event(new Registered($user));
+        if ($request->filled('role_id')) {
+            $role = Role::findById($request->role_id);
+            $user->assignRole($role);
+        }
 
-        Auth::login($user);
+        //if ($request->filled('role_id')) {
+        //    $role = Role::findById($request->role_id);
+        //    $user->assignRole($role);
+        //}
+            /*
+        $user = User::firstOrCreate(
+            ['email' => 'mantenimiento@mail.com'],
+            ['name' => 'Usuario Mantenimiento', 'password' => bcrypt('mantenimiento'), 'email_verified_at' => now()]
+        );
+        $user->assignRole('Mantenimiento');
+        */
+        //event(new Registered($user));
 
-        return redirect(RouteServiceProvider::HOME);
+        //Auth::login($user);
+
+        //return redirect(RouteServiceProvider::HOME);
     }
 }

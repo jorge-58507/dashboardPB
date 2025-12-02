@@ -398,7 +398,8 @@ class FormController extends Controller
     }
     public function submitGasToSheet(Request $request)
     {
-        $gas_price = 0.45;
+        $rs_gasprice = dpb_gasprice::WHERE('gasprice_status',1)->first();
+        $gas_price = $rs_gasprice['gasprice_price'];
         $rules = [
             'cala' => 'required|numeric|max:999999999|min:0',
             'lavanderia' => 'required|numeric|max:999999999|min:0',
@@ -524,7 +525,9 @@ class FormController extends Controller
     }
     public function updateGas(Request $request)
     {
-        $gas_price = 0.45;
+        $rs_gasprice = dpb_gasprice::WHERE('gasprice_status',1)->first();
+        $gas_price = $rs_gasprice['gasprice_price'];
+
         $userId = Auth::id();
         $rules = [
             'cala' => 'required|numeric|max:999999999|min:0',
