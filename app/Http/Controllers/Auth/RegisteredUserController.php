@@ -50,22 +50,6 @@ class RegisteredUserController extends Controller
             $role = Role::findById($request->role_id);
             $user->assignRole($role);
         }
-
-        //if ($request->filled('role_id')) {
-        //    $role = Role::findById($request->role_id);
-        //    $user->assignRole($role);
-        //}
-            /*
-        $user = User::firstOrCreate(
-            ['email' => 'mantenimiento@mail.com'],
-            ['name' => 'Usuario Mantenimiento', 'password' => bcrypt('mantenimiento'), 'email_verified_at' => now()]
-        );
-        $user->assignRole('Mantenimiento');
-        */
-        //event(new Registered($user));
-
-        //Auth::login($user);
-
-        //return redirect(RouteServiceProvider::HOME);
+        return redirect(RouteServiceProvider::HOME);
     }
 }
