@@ -9,11 +9,6 @@
         </p>
     </header>
 
-    {{-- 
-        IMPORTANTE: Cambié la acción de 'route('register')' a 'route('users.store')'
-        para reflejar que esta es una vista de administración. 
-        Asegúrate de que la ruta sea correcta.
-    --}}
     <form method="POST" action="{{ route('register') }}" class="mt-6 space-y-6">
         @csrf
 

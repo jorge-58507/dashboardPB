@@ -24,6 +24,12 @@
                         @include('auth.register')
                     </div>
                 </div>
+
+                <div class="p-4 sm:p-8 bg-white shadow sm:rounded-lg">
+                    <div>
+                        @include('auth.userList')
+                    </div>
+                </div>
             @endhasanyrole
 
                 <div class="p-4 sm:p-8 bg-white shadow sm:rounded-lg">
@@ -33,4 +39,12 @@
                 </div>
         </div>
     </div>
+    <script src="/JS/master.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script type="text/javascript">
+        document.addEventListener('DOMContentLoaded', function () {
+            initializeUserFilter();
+        })
+    </script>
+
 </x-app-layout>

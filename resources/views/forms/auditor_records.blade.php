@@ -1,6 +1,18 @@
 {{-- resources/views/forms/inventory/auditor_records.blade.php --}}
  
 <div class="bg-white p-6 rounded-lg shadow-lg">
+    @if (isset($alerta_final) && $alerta_final)
+        <div id="atencion-div" class="p-4 mb-4 text-sm text-red-800 border border-red-300 rounded-lg bg-red-50 dark:bg-gray-800 dark:text-red-300 dark:border-red-800" role="alert">
+            <div class="flex items-center">
+                <span class="text-xl mr-2" aria-hidden="true">&#9888;</span> 
+                <h3 class="text-lg font-medium">¡Alerta de Consistencia de Ingresos/Ventas!</h3>
+            </div>
+            <div class="mt-2 text-sm ml-6">
+                <p class="font-semibold">{{ $alerta_final }}</p>
+            </div>
+        </div>
+    @endif
+
     <div class="flex flex-col lg:flex-row justify-between items-center mb-6">
         <h2 class="text-2xl font-bold text-dark-navy mb-6">Registros de Ingresos</h2>
         <form id="income-filter-form" action="{{ route('formulario.auditor.records') }}" method="GET" onsubmit="event.preventDefault();" class="mt-4 lg:mt-0">

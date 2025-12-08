@@ -4,7 +4,7 @@
 
 {{-- AÑADE max-w-4xl mx-auto A LA ETIQUETA FORM --}}
 <form id="gasConsumptionForm" action="{{ route('formulario.gas.submit') }}" method="POST"
-      class="max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-md border border-light-gray">
+      class="max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-md border border-light-gray" autocomplete="off">
     @csrf
 
     {{-- Contenedor del título para el formulario --}}

@@ -45,4 +45,10 @@ class User extends Authenticatable
 
     public function gasConsumptions()   {   return $this->hasMany(dpb_gasconsumption::class, 'gasconsumption_userid', 'id');    }
     public function sales()             {   return $this->hasMany(dpb_sale::class, 'sale_userid', 'id');    }
+    public function gasprices()         {   return $this->hasMany(dpb_gasprice::class, 'gasprice_userid', 'id');    }
+    public function incomes()           {   return $this->hasMany(dpb_income::class, 'income_userid', 'id');    }
+    public function inventoryhks()      {   return $this->hasMany(dpb_inventoryhk::class, 'inventoryhk_userid', 'id');    }
+    public function laundries()         {   return $this->hasMany(dpb_laundry::class, 'laundry_userid', 'id');    }
+    public function phonecalls()        {   return $this->hasMany(dpb_phonecall::class, 'phonecall_userid', 'id');    }
+    
 }

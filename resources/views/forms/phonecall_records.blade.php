@@ -1,6 +1,19 @@
 {{-- resources/views/forms/phonecall_records.blade.php --}} 
 
 <div class="bg-white p-6 rounded-lg shadow-lg">
+    @if (isset($alerta_mensaje) && $alerta_mensaje)
+        <div id="atencion-div" class="p-4 mb-4 text-sm text-yellow-800 border border-yellow-300 rounded-lg bg-yellow-50 dark:bg-gray-800 dark:text-yellow-300 dark:border-yellow-800" role="alert">
+            <div class="flex items-center">
+                <span class="text-xl mr-2" aria-hidden="true">&#9888;</span> 
+                <span class="sr-only">Advertencia</span>
+                <h3 class="text-lg font-medium">¡Atención: Datos Incompletos!</h3>
+            </div>
+            <div class="mt-2 text-sm ml-6">
+                <p>Se ha detectado que faltan registros para algunos días del mes. Por favor, revísalos y complétalos.</p>
+                <p class="mt-1 font-semibold">{{ $alerta_mensaje ?? '' }}</p>
+            </div>
+        </div>
+    @endif
     <div class="flex flex-col lg:flex-row justify-between items-center mb-6">
         <h2 class="text-2xl font-bold text-dark-navy mb-6">Registros de Llamadas</h2>
         <form id="PhoneCall-filter-form" action="{{ route('formulario.phonecall.records') }}" method="GET" onsubmit="event.preventDefault();" class="mt-4 lg:mt-0">

@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use App\Models\dpb_gasconsumption;
 use App\Models\dpb_sale;
@@ -13,6 +14,8 @@ use App\Models\dpb_phonecall;
 use App\Models\dpb_laundry;
 use App\Models\dpb_inventoryhk;
 use App\Models\dpb_income;
+use App\Models\dpb_gasprice;
+use App\Models\User;
 
 // Importaciones para Google Sheets API
 use Google\Client;
@@ -49,10 +52,15 @@ class FormController extends Controller
             if ($existingRows) {
                 $dataRows = array_slice($existingRows, 1);
                 foreach ($dataRows as $row) {
-                    $existingTableId = $row[0] ?? null; // Columna A (índice 0)
+                    $existingTableId = $row[0] ?? null; // Columna X (índice 0)
                     if ($existingTableId == $databaseId) {
+                        $ans = $this->updateTable($sheetName, $databaseId, $RowData);
                         Log::warning('Intento de registro duplicado detectado.', ['table_id' => $existingTableId,]);
-                        return ['status' => 'fail', 'message' => 'Ya existe este registro. No se permite duplicar.'.$existingTableId.' pp '.$databaseId, 'HTTPcode' => 409];
+                        if ($ans['status'] === 'success') {
+                            return ['status' => 'fail', 'message' => 'Ya existe este registro. Se actualizó.', 'HTTPcode' => 409];
+                        } else {
+                            return ['status' => 'fail', 'message' => 'Ya existe este registro. No se permite duplicar.', 'HTTPcode' => 409];
+                        }
                     }
                 }
             }
@@ -398,8 +406,8 @@ class FormController extends Controller
     }
     public function submitGasToSheet(Request $request)
     {
-        $rs_gasprice = dpb_gasprice::WHERE('gasprice_status',1)->first();
-        $gas_price = $rs_gasprice['gasprice_price'];
+        $rs_gasprice = dpb_gasprice::WHERE('gasprice_status',1)->ORDERBY('gasprice_id','DESC')->first();
+        $gas_price = (!empty($rs_gasprice['gasprice_price'])) ? $rs_gasprice['gasprice_price'] : 1;
         $rules = [
             'cala' => 'required|numeric|max:999999999|min:0',
             'lavanderia' => 'required|numeric|max:999999999|min:0',
@@ -476,35 +484,80 @@ class FormController extends Controller
     }
     public function showGasConsumptionRecords(Request $request)
     {
+        // 1. DETERMINACIÓN DEL PERÍODO Y FECHAS LÍMITE
         $filterDate = $request->input('filter_date', Carbon::now()->format('Y-m-d'));
-        $year = Carbon::parse($filterDate)->year;
-        $month = Carbon::parse($filterDate)->month;
+        
+        $carbonDate = Carbon::parse($filterDate);
+        $year = $carbonDate->year;
+        $month = $carbonDate->month;
 
+        // Fechas de inicio, fin de mes y fecha actual
+        $startDate = $carbonDate->firstOfMonth()->format('Y-m-d');
+        $endDate = $carbonDate->lastOfMonth()->format('Y-m-d');
+        $hoy = Carbon::now()->format('Y-m-d'); // 👈 Fecha actual para limitar la búsqueda
+
+        // 2. CONSTRUCCIÓN DE LA CONSULTA PRINCIPAL (Mantiene tu lógica existente)
         $query = dpb_gasconsumption::query();
-
-        if ($request->has('filter_date') && $request->input('filter_date')) {
-            $query->whereYear('gasconsumption_date', $year)
-                  ->whereMonth('gasconsumption_date', $month);
-        } else {
-            // Por defecto, mostrar el mes actual si no hay filtro
-            $query->whereYear('gasconsumption_date', Carbon::now()->year)
-                  ->whereMonth('gasconsumption_date', Carbon::now()->month);
-        }
+        $query->whereYear('gasconsumption_date', $year)
+              ->whereMonth('gasconsumption_date', $month);
 
         $currentUser = Auth::user();
-        $isAdmin = $currentUser->hasRole('Admin'); // Usando el método hasRole de Spatie/Laravel-Permission
-        if ($isAdmin) {
-            $rs_gasConsumption = $query->orderBy('gasconsumption_status', 'DESC')
-                                    ->orderBy('gasconsumption_date', 'DESC')
-                                    ->join('users', 'users.id', 'dpb_gasconsumptions.gasconsumption_userid')
-                                    ->get();                
-        }else{
-            $rs_gasConsumption = $query->orderBy('gasconsumption_status', 'DESC')
-                            ->orderBy('gasconsumption_date', 'DESC')
-                            ->join('users', 'users.id', 'dpb_gasconsumptions.gasconsumption_userid')
-                            ->where('dpb_gasconsumptions.gasconsumption_userid',$currentUser->id)
-                            ->get();
+        $isAdmin = $currentUser->hasRole('Admin');
+        
+        // Aplica filtro de usuario si no es Admin
+        if (!$isAdmin) {
+            $query->where('dpb_gasconsumptions.gasconsumption_userid', $currentUser->id);
         }
+
+        $query->orderBy('gasconsumption_status', 'DESC')
+              ->orderBy('gasconsumption_date', 'DESC')
+              ->join('users', 'users.id', 'dpb_gasconsumptions.gasconsumption_userid');
+
+        $rs_gasConsumption = $query->get();
+
+        // 3. VERIFICACIÓN DE DÍAS FALTANTES (BRECHAS)
+
+        // Condición de filtro de usuario para el LEFT JOIN
+        $userIdCondition = $isAdmin ? "1=1" : "registros.gasconsumption_userid = " . $currentUser->id;
+
+        $dias_faltantes = DB::select("
+            SELECT
+                DATE_FORMAT(dias_del_mes.fecha_completa, '%d/%m') AS dia_sin_datos
+            FROM
+                (
+                    -- Genera secuencia de fechas (corregido para evitar duplicados)
+                    SELECT DATE('$startDate') + INTERVAL (a.N + b.N*10) DAY AS fecha_completa
+                    FROM (SELECT 0 AS N UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 
+                          UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) a,
+                         (SELECT 0 AS N UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3) b
+                    WHERE 
+                        DATE('$startDate') + INTERVAL (a.N + b.N*10) DAY <= '$endDate'
+                        -- 🚨 CORRECCIÓN 1: Excluir fechas futuras
+                        AND DATE('$startDate') + INTERVAL (a.N + b.N*10) DAY < '$hoy'
+                ) AS dias_del_mes
+            LEFT JOIN
+                dpb_gasconsumptions AS registros
+            ON
+                dias_del_mes.fecha_completa = DATE(registros.gasconsumption_date)
+                -- 🚨 CORRECCIÓN 2: Mover el filtro de usuario al ON para la correcta identificación de brechas
+                AND $userIdCondition
+            WHERE
+                registros.gasconsumption_date IS NULL
+        ");
+
+        $alerta_mensaje = null;
+
+        if (count($dias_faltantes) > 0) {
+            $dias_sin_datos = array_map(function($d){
+                return $d->dia_sin_datos;
+            }, $dias_faltantes);
+
+            // Ahora el array $dias_sin_datos solo contendrá fechas únicas (si la consulta está bien)
+            $dias_str = implode(', ', $dias_sin_datos);
+            $alerta_mensaje = "Advertencia: Faltan datos para los siguientes días del mes: " . $dias_str;
+        }
+
+        // 4. RENDERIZAR VISTA
         try {
             $displayHeaders = [
                 'gasconsumption_date' => 'Fecha',
@@ -516,8 +569,10 @@ class FormController extends Controller
                 'gasconsumption_hotwater' => 'Agua Caliente',
                 'gasconsumption_price' => 'Precio',
                 'gasconsumption_status' => 'Estado'
-            ];
-            return view('forms.gasConsumption_records', compact('displayHeaders', 'rs_gasConsumption', 'filterDate'));
+            ];            
+            // Pasar el mensaje de alerta a la vista
+            return view('forms.gasConsumption_records', compact('displayHeaders', 'rs_gasConsumption', 'filterDate', 'alerta_mensaje'));
+            
         } catch (\Exception $e) {
             Log::error('Error al cargar registros: ' . $e->getMessage());
             return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
@@ -526,7 +581,7 @@ class FormController extends Controller
     public function updateGas(Request $request)
     {
         $rs_gasprice = dpb_gasprice::WHERE('gasprice_status',1)->first();
-        $gas_price = $rs_gasprice['gasprice_price'];
+        $gas_price = (!empty($rs_gasprice['gasprice_price'])) ? $rs_gasprice['gasprice_price'] : 0;
 
         $userId = Auth::id();
         $rules = [
@@ -814,27 +869,168 @@ class FormController extends Controller
             return response()->json(['status' => 'fail', 'message' => $ans['message']], $ans['HTTPcode']);
         }
     }
+    // public function showSalesRecords(Request $request)
+    // {
+    //     $filterDate = $request->input('filter_date', Carbon::now()->format('Y-m-d'));
+    //     $year = Carbon::parse($filterDate)->year;
+    //     $month = Carbon::parse($filterDate)->month;
+
+    //     $query = dpb_sale::query();
+
+    //     if ($request->has('filter_date') && $request->input('filter_date')) {
+    //         $query->whereYear('sale_date', $year)
+    //               ->whereMonth('sale_date', $month);
+    //     } else {
+    //         $query->whereYear('sale_date', Carbon::now()->year)
+    //               ->whereMonth('sale_date', Carbon::now()->month);
+    //     }
+
+    //     $currentUser = Auth::user();
+    //     $currentUserId = $currentUser->id;
+    //     $isAdmin = $currentUser->hasRole('Admin'); // Usando el método hasRole de Spatie/Laravel-Permission
+
+    //     try {
+    //         if ($isAdmin) {
+    //             $records = $query->ORDERBY('sale_status', 'DESC')->ORDERBY('sale_date', 'DESC')
+    //                 ->JOIN('users', 'users.id', 'dpb_sales.sale_userid')->GET();
+    //         } else {
+    //             $records = $query->ORDERBY('sale_status', 'DESC')->ORDERBY('sale_date', 'DESC')
+    //             ->where('dpb_sales.sale_userid',$currentUserId)
+    //             ->JOIN('users', 'users.id', 'dpb_sales.sale_userid')->GET();
+
+    //         }
+            
+    //         $displayHeaders = [
+    //             'sale_date' => 'Fecha',
+    //             'name' => 'Usuario',
+    //             'sale_corporative' => 'Corporativo',
+    //             'sale_national' => 'Ag. Nacional',
+    //             'sale_international' => 'Ag. Internacional',
+    //             'sale_callcenter' => 'Callcenter',
+    //             'sale_ota' => 'OTAs',
+    //             'sale_arenas' => 'Arenas',
+    //             'sale_web' => 'Pag. Web',
+    //             'sale_status' => 'Estado'
+    //         ];
+    //         return view('forms.sales_records', compact('displayHeaders', 'records'));
+    //     } catch (\Exception $e) {
+    //         Log::error('Error al cargar registros: ' . $e->getMessage());
+    //         return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
+    //     }
+    // }
+
     public function showSalesRecords(Request $request)
     {
+        // 1. DETERMINACIÓN DEL PERÍODO Y FECHAS LÍMITE
+        // 🚨 Fecha por defecto es AYER (subDay()), a menos que se filtre
         $filterDate = $request->input('filter_date', Carbon::now()->format('Y-m-d'));
-        $year = Carbon::parse($filterDate)->year;
-        $month = Carbon::parse($filterDate)->month;
+        
+        $carbonDate = Carbon::parse($filterDate);
+        $year = $carbonDate->year;
+        $month = $carbonDate->month;
 
+        // Definir las fechas límite para las consultas
+        $startDate = $carbonDate->firstOfMonth()->format('Y-m-d');
+        $endDate = $carbonDate->lastOfMonth()->format('Y-m-d');
+        $hoy = Carbon::now()->format('Y-m-d'); // Fecha actual para limitar la búsqueda
+
+        // 2. CONSTRUCCIÓN DE LA CONSULTA PRINCIPAL
         $query = dpb_sale::query();
 
+        // Aplicar filtro por mes/año
         if ($request->has('filter_date') && $request->input('filter_date')) {
-            $query->whereYear('sale_date', $year)
-                  ->whereMonth('sale_date', $month);
+            $query->whereYear('sale_date', $year)->whereMonth('sale_date', $month);
         } else {
-            $query->whereYear('sale_date', Carbon::now()->year)
-                  ->whereMonth('sale_date', Carbon::now()->month);
+            $query->whereYear('sale_date', Carbon::now()->year)->whereMonth('sale_date', Carbon::now()->month);
         }
-
+        
         $currentUser = Auth::user();
         $currentUserId = $currentUser->id;
-        $isAdmin = $currentUser->hasRole('Admin'); // Usando el método hasRole de Spatie/Laravel-Permission
+        $isAdmin = $currentUser->hasRole('Admin');
 
+        // 3. VERIFICACIÓN DE BRECHAS DE FECHAS (Faltan registros de VENTA)
+        $userIdConditionBrecha = $isAdmin ? "1=1" : "registros.sale_userid = " . $currentUserId;
+
+        $dias_faltantes = DB::select("
+            SELECT
+                DATE_FORMAT(dias_del_mes.fecha_completa, '%d/%m') AS dia_sin_datos
+            FROM
+                (
+                    -- Generar secuencia de fechas
+                    SELECT DATE('$startDate') + INTERVAL (a.N + b.N*10) DAY AS fecha_completa
+                    FROM (SELECT 0 AS N UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 
+                          UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) a,
+                         (SELECT 0 AS N UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3) b
+                    WHERE 
+                        DATE('$startDate') + INTERVAL (a.N + b.N*10) DAY <= '$endDate'
+                        AND DATE('$startDate') + INTERVAL (a.N + b.N*10) DAY < '$hoy'
+                ) AS dias_del_mes
+            LEFT JOIN
+                dpb_saleS AS registros
+            ON
+                dias_del_mes.fecha_completa = DATE(registros.sale_date)
+                AND registros.sale_status = 1 
+                AND $userIdConditionBrecha 
+            WHERE
+                registros.sale_date IS NULL
+        ");
+
+        $alerta_brechas = null;
+        if (count($dias_faltantes) > 0) {
+            $dias_str = implode(', ', array_map(fn($d) => $d->dia_sin_datos, $dias_faltantes));
+            $alerta_brechas = "Faltan registros de ventas ACTIVAS para los días: " . $dias_str;
+        }
+
+        // 4. VERIFICACIÓN DE EQUIVALENCIA (Ventas vs Ingresos) 🚨 NUEVO CÓDIGO 🚨
+        
+        // La condición de usuario para la consulta SQL de equivalencia
+        $userIdConditionEq = $isAdmin ? "" : " AND T1.sale_userid = " . $currentUserId;
+        
+        $registros_sin_equivalencia = DB::select("
+            SELECT
+                DATE_FORMAT(T1.sale_date, '%d/%m') AS fecha_sin_equivalencia
+            FROM
+                dpb_sales AS T1 -- Tabla de Ventas (fuente)
+            LEFT JOIN
+                dpb_incomes AS T2 -- Tabla de Ingresos (destino/equivalente)
+            ON
+                DATE(T1.sale_date) = DATE(T2.income_date)
+                -- Solo consideramos equivalencia si el registro de ingresos también está activo
+                AND T2.income_status = 1 
+            WHERE
+                -- T2 es NULL: No hay registro de ingreso ACTIVO que coincida
+                T2.income_date IS NULL
+                -- Solo revisamos registros de ventas activos
+                AND T1.sale_status = 1
+                -- Aplicar filtro de mes/año
+                AND YEAR(T1.sale_date) = $year
+                AND MONTH(T1.sale_date) = $month
+                -- Aplicar filtro de usuario
+                $userIdConditionEq
+            GROUP BY
+                fecha_sin_equivalencia
+        ");
+
+        $alerta_equivalencia = null;
+        if (count($registros_sin_equivalencia) > 0) {
+            $fechas_str = implode(', ', array_map(fn($r) => $r->fecha_sin_equivalencia, $registros_sin_equivalencia));
+            $alerta_equivalencia = "Registros de ventas activos sin equivalente de ingresos activo en las fechas: " . $fechas_str;
+        }
+        
+        // 5. COMBINAR MENSAJES DE ALERTA
+        $alerta_final = null;
+        if ($alerta_brechas && $alerta_equivalencia) {
+            $alerta_final = $alerta_brechas . " || " . $alerta_equivalencia;
+        } elseif ($alerta_brechas) {
+            $alerta_final = $alerta_brechas;
+        } elseif ($alerta_equivalencia) {
+            $alerta_final = $alerta_equivalencia;
+        }
+
+
+        // 6. OBTENER REGISTROS FINALES Y RENDERIZAR VISTA
         try {
+            // El resto de la lógica de obtención de registros se mantiene igual
             if ($isAdmin) {
                 $records = $query->ORDERBY('sale_status', 'DESC')->ORDERBY('sale_date', 'DESC')
                     ->JOIN('users', 'users.id', 'dpb_sales.sale_userid')->GET();
@@ -842,7 +1038,6 @@ class FormController extends Controller
                 $records = $query->ORDERBY('sale_status', 'DESC')->ORDERBY('sale_date', 'DESC')
                 ->where('dpb_sales.sale_userid',$currentUserId)
                 ->JOIN('users', 'users.id', 'dpb_sales.sale_userid')->GET();
-
             }
             
             $displayHeaders = [
@@ -857,12 +1052,18 @@ class FormController extends Controller
                 'sale_web' => 'Pag. Web',
                 'sale_status' => 'Estado'
             ];
-            return view('forms.sales_records', compact('displayHeaders', 'records'));
+
+            // 7. Pasar el mensaje de alerta final a la vista
+            return view('forms.sales_records', compact('displayHeaders', 'records', 'filterDate', 'alerta_final'));
+
         } catch (\Exception $e) {
             Log::error('Error al cargar registros: ' . $e->getMessage());
             return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
         }
     }
+
+
+
     public function deleteSales(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -1067,29 +1268,75 @@ class FormController extends Controller
     }
     public function showPhoneCallRecords(Request $request)
     {
-
+        // 1. DETERMINACIÓN DEL PERÍODO Y FECHAS LÍMITE
+        // 🚨 CAMBIO: Fecha por defecto es AYER (subDay()), a menos que se filtre
         $filterDate = $request->input('filter_date', Carbon::now()->format('Y-m-d'));
-        $year = Carbon::parse($filterDate)->year;
-        $month = Carbon::parse($filterDate)->month;
+        
+        $carbonDate = Carbon::parse($filterDate);
+        $year = $carbonDate->year;
+        $month = $carbonDate->month;
 
+        // Definir las fechas límite para la consulta de brechas
+        $startDate = $carbonDate->firstOfMonth()->format('Y-m-d');
+        $endDate = $carbonDate->lastOfMonth()->format('Y-m-d');
+        $hoy = Carbon::now()->format('Y-m-d'); // Fecha actual para limitar la búsqueda
+
+        // 2. CONSTRUCCIÓN DE LA CONSULTA PRINCIPAL
         $query = dpb_phonecall::query();
 
-        if ($request->has('filter_date') && $request->input('filter_date')) {
-            $query->whereYear('phonecall_date', $year)
-                  ->whereMonth('phonecall_date', $month);
-        } else {
-            $query->whereYear('phonecall_date', Carbon::now()->year)
-                  ->whereMonth('phonecall_date', Carbon::now()->month);
-        }
-
-
-        $sheetName = $this->sheet['phonecall'];
-        $spreadsheetId = config('google.sheet_id');
+        // Aplicar filtro por mes/año
+        $query->whereYear('phonecall_date', $year)
+              ->whereMonth('phonecall_date', $month);
 
         $currentUser = Auth::user();
         $currentUserId = $currentUser->id;
         $isAdmin = $currentUser->hasRole('Admin');
+        
+        // El resto de la consulta principal (JOIN y GET) se maneja en el try-catch
+        
+        // 3. VERIFICACIÓN DE DÍAS FALTANTES (BRECHAS)
 
+        // Condición de filtro de usuario para el LEFT JOIN
+        $userIdCondition = $isAdmin ? "1=1" : "registros.phonecall_userid = " . $currentUserId;
+
+        $dias_faltantes = DB::select("
+            SELECT
+                DATE_FORMAT(dias_del_mes.fecha_completa, '%d/%m') AS dia_sin_datos
+            FROM
+                (
+                    -- Generar secuencia de fechas del mes consultado
+                    SELECT DATE('$startDate') + INTERVAL (a.N + b.N*10) DAY AS fecha_completa
+                    FROM (SELECT 0 AS N UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 
+                          UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) a,
+                         (SELECT 0 AS N UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3) b
+                    WHERE 
+                        DATE('$startDate') + INTERVAL (a.N + b.N*10) DAY <= '$endDate'
+                        -- Excluir fechas futuras
+                        AND DATE('$startDate') + INTERVAL (a.N + b.N*10) DAY < '$hoy'
+                ) AS dias_del_mes
+            LEFT JOIN
+                dpb_phonecalls AS registros -- 👈 Usamos el modelo dpb_phonecall
+            ON
+                dias_del_mes.fecha_completa = DATE(registros.phonecall_date)
+                AND registros.phonecall_status = 1
+                -- Mover el filtro de usuario al ON
+                AND $userIdCondition
+            WHERE
+                registros.phonecall_date IS NULL
+        ");
+
+        $alerta_mensaje = null;
+
+        if (count($dias_faltantes) > 0) {
+            $dias_sin_datos = array_map(function($d){
+                return $d->dia_sin_datos;
+            }, $dias_faltantes);
+
+            $dias_str = implode(', ', $dias_sin_datos);
+            $alerta_mensaje = "Advertencia: Faltan datos de llamadas para los siguientes días del mes: " . $dias_str;
+        }
+
+        // 4. OBTENER REGISTROS FINALES Y RENDERIZAR VISTA
         try {
             if ($isAdmin) {
                 $records = $query->ORDERBY('phonecall_status', 'DESC')->ORDERBY('phonecall_date', 'DESC')
@@ -1108,7 +1355,10 @@ class FormController extends Controller
                 'phonecall_average' => 'T. Promedio',
                 'phonecall_status' => 'Estado'
             ];
-            return view('forms.phonecall_records', compact('displayHeaders', 'records'));
+            
+            // Pasar el mensaje de alerta a la vista
+            return view('forms.phonecall_records', compact('displayHeaders', 'records', 'alerta_mensaje'));
+            
         } catch (\Exception $e) {
             Log::error('Error al cargar registros de Llamadas: ' . $e->getMessage());
             return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
@@ -1878,24 +2128,113 @@ class FormController extends Controller
     }
     public function showAuditorRecords(Request $request)
     {
+        // 1. DETERMINACIÓN DEL PERÍODO Y FECHAS LÍMITE
+        // 🚨 CORRECCIÓN: Usar AYER (subDay()) como fecha por defecto, según solicitud anterior.
         $filterDate = $request->input('filter_date', Carbon::now()->format('Y-m-d'));
-        $year = Carbon::parse($filterDate)->year;
-        $month = Carbon::parse($filterDate)->month;
+        
+        $carbonDate = Carbon::parse($filterDate);
+        $year = $carbonDate->year;
+        $month = $carbonDate->month;
 
+        // Definir las fechas límite para las consultas
+        $startDate = $carbonDate->firstOfMonth()->format('Y-m-d');
+        $endDate = $carbonDate->lastOfMonth()->format('Y-m-d');
+        $hoy = Carbon::now()->format('Y-m-d');
+
+        // ... (Sección 2: CONSTRUCCIÓN DE LA CONSULTA PRINCIPAL - Se mantiene igual)
         $query = dpb_income::query();
 
         if ($request->has('filter_date') && $request->input('filter_date')) {
-            $query->whereYear('income_date', $year)
-                  ->whereMonth('income_date', $month);
+            $query->whereYear('income_date', $year)->whereMonth('income_date', $month);
         } else {
-            $query->whereYear('income_date', Carbon::now()->year)
-                  ->whereMonth('income_date', Carbon::now()->month);
+            $query->whereYear('income_date', Carbon::now()->year)->whereMonth('income_date', Carbon::now()->month);
         }
         
         $currentUser = Auth::user();
         $currentUserId = $currentUser->id;
         $isAdmin = $currentUser->hasRole('Admin');
 
+        // 3. VERIFICACIÓN DE DÍAS FALTANTES (BRECHAS DE FECHAS)
+        $userIdConditionBrecha = $isAdmin ? "1=1" : "registros.income_userid = " . $currentUserId;
+
+        $dias_faltantes = DB::select("
+            SELECT
+                DATE_FORMAT(dias_del_mes.fecha_completa, '%d/%m') AS dia_sin_datos
+            FROM
+                (
+                    SELECT DATE('$startDate') + INTERVAL (a.N + b.N*10) DAY AS fecha_completa
+                    FROM (SELECT 0 AS N UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 
+                          UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) a,
+                         (SELECT 0 AS N UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3) b
+                    WHERE 
+                        DATE('$startDate') + INTERVAL (a.N + b.N*10) DAY <= '$endDate'
+                        -- Usamos '<=' en lugar de '<' para incluir el día de hoy si aún no tiene registro, 
+                        AND DATE('$startDate') + INTERVAL (a.N + b.N*10) DAY < '$hoy'
+                ) AS dias_del_mes
+            LEFT JOIN
+                dpb_incomes AS registros
+            ON
+                dias_del_mes.fecha_completa = DATE(registros.income_date)
+                AND registros.income_status = 1 
+                AND $userIdConditionBrecha 
+            WHERE
+                registros.income_date IS NULL
+        ");
+
+        $alerta_brechas = null;
+        if (count($dias_faltantes) > 0) {
+            $dias_str = implode(', ', array_map(fn($d) => $d->dia_sin_datos, $dias_faltantes));
+            $alerta_brechas = "Faltan registros de ingresos ACTIVOS para los días: " . $dias_str;
+        }
+
+        // 4. VERIFICACIÓN DE EQUIVALENCIA INVERSA (Ingresos vs Ventas) 🚨 NUEVO CÓDIGO 🚨
+        
+        // Condición de usuario para la consulta SQL de equivalencia
+        $userIdConditionEq = $isAdmin ? "" : " AND T1.income_userid = " . $currentUserId;
+        
+        $registros_sin_equivalencia = DB::select("
+            SELECT
+                DATE_FORMAT(T1.income_date, '%d/%m') AS fecha_sin_equivalencia
+            FROM
+                dpb_incomes AS T1 -- 👈 Tabla de Ingresos (fuente)
+            LEFT JOIN
+                dpb_sales AS T2 -- 👈 Tabla de Ventas (destino/equivalente)
+            ON
+                DATE(T1.income_date) = DATE(T2.sale_date)
+                -- Solo consideramos equivalencia si el registro de ventas también está activo
+                AND T2.sale_status = 1 
+            WHERE
+                -- T2 es NULL: No hay registro de venta ACTIVO que coincida
+                T2.sale_date IS NULL
+                -- Solo revisamos registros de ingresos activos
+                AND T1.income_status = 1
+                -- Aplicar filtro de mes/año
+                AND YEAR(T1.income_date) = $year
+                AND MONTH(T1.income_date) = $month
+                -- Aplicar filtro de usuario
+                $userIdConditionEq
+            GROUP BY
+                fecha_sin_equivalencia
+        ");
+
+        $alerta_equivalencia = null;
+        if (count($registros_sin_equivalencia) > 0) {
+            $fechas_str = implode(', ', array_map(fn($r) => $r->fecha_sin_equivalencia, $registros_sin_equivalencia));
+            $alerta_equivalencia = "Registros de ingresos activos sin un registro de ventas activo equivalente en las fechas: " . $fechas_str;
+        }
+        
+        // 5. COMBINAR MENSAJES DE ALERTA
+        $alerta_final = null;
+        if ($alerta_brechas && $alerta_equivalencia) {
+            $alerta_final = "Brechas: " . $alerta_brechas . " <br/> Equivalencia: " . $alerta_equivalencia;
+        } elseif ($alerta_brechas) {
+            $alerta_final = $alerta_brechas;
+        } elseif ($alerta_equivalencia) {
+            $alerta_final = $alerta_equivalencia;
+        }
+
+
+        // 6. OBTENER REGISTROS FINALES Y RENDERIZAR VISTA
         try {
             if ($isAdmin) {
                 $records = $query->orderBy('income_status', 'DESC')->orderBy('income_date', 'DESC')
@@ -1913,7 +2252,10 @@ class FormController extends Controller
                 'income_other' => 'Otros Ingresos',
                 'income_status' => 'Estado'
             ];
-            return view('forms.auditor_records', compact('displayHeaders', 'records', 'filterDate'));
+
+            // 7. Pasar el mensaje de alerta final a la vista
+            return view('forms.auditor_records', compact('displayHeaders', 'records', 'filterDate', 'alerta_final'));
+
         } catch (\Exception $e) {
             Log::error('Error al cargar registros: ' . $e->getMessage());
             return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
@@ -1944,5 +2286,25 @@ class FormController extends Controller
         return response()->json(['message' => $result['message']], $result['HTTPcode']);
     }
 
+
+
+    public function filterUser(Request $request)
+    {
+        $filter_user = $request->input('filter_user');
+
+        $rs_user = User::WHERE('name','LIKE','%'.$filter_user.'%')->orWhere('email','LIKE','%'.$filter_user.'%')->get();
+
+        try {
+            $displayHeaders = [
+                'name' => 'Usuario',
+                'email' => 'Correo',
+                'user_status' => 'Estado',
+            ];
+            return view('auth.partial.user_records', compact('displayHeaders','rs_user', 'filter_user'));
+        } catch (\Exception $e) {
+            Log::error('Error al cargar registros: ' . $e->getMessage());
+            return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
+        }
+    }
 
 }

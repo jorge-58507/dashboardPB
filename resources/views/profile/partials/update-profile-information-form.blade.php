@@ -49,7 +49,7 @@
         @hasanyrole('Admin|Mantenimiento') {{-- Visible para Ventas y Admin --}}
             <div>
                 <x-input-label for="gasPrice" :value="__('Precio del Gas')" />
-                <x-text-input id="gasPrice" name="gasPrice" type="text" class="mt-1 block w-full" :value="old('gasPrice')" required autofocus autocomplete="off" />
+                <x-text-input id="gasPrice" name="gasPrice" type="text" class="mt-1 block w-full" :value="old('gasPrice')" autofocus autocomplete="off" />
                 <x-input-error class="mt-2" :messages="$errors->get('gasPrice')" />
             </div>
         @endhasanyrole

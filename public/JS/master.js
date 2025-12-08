@@ -1347,3 +1347,232 @@ function disableButton(form) {
     }, 10000);
     //return true;
 }
+
+async function deactivateUser(button){
+    const userId = button.dataset.rowNumber;
+    const res = await Swal.fire({
+        title: "¿Estás seguro?",
+        text: "No podrás revertir esta acción",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: "#3085d6",
+        cancelButtonColor: "#d33",
+        confirmButtonText: "Sí, eliminar",
+        cancelButtonText: "Cancelar",
+    });
+    if (res.isConfirmed) {
+        button.disabled = true; // Deshabilitamos el botón para evitar múltiples clics
+        try {
+            // Enviamos la solicitud DELETE a la ruta de eliminación
+            const response = await fetch("/profile", {
+                method: "DELETE",
+                headers: {
+                    "X-CSRF-TOKEN": document
+                        .querySelector('meta[name="csrf-token"]')
+                        .getAttribute("content"), // Obtenemos el token CSRF
+                    Accept: "application/json",
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ userId: userId }), // Enviamos el número de fila
+            });
+
+            const result = await response.json(); // Parseamos la respuesta JSON
+
+            if (response.ok) {
+                toastIt(result.message, "success");
+                // sombrear la fila visualmente, usando el ID específico de llamadas
+                const rowElement = document.getElementById(`row-user-${userId}`);                        
+                if (rowElement) {
+                    rowElement.className = 'bg-gray-700 text-white';
+                    const totalCell = rowElement.cells.length;
+                    const statusCell = rowElement.cells[totalCell - 2];
+                    statusCell.textContent = 'Inactivo';
+                    const actionCell = rowElement.cells[totalCell - 1];
+                    actionCell.textContent = '';
+                }
+            } else {
+                let errorMessage = result.message || "Error al eliminar el registro.";
+                toastIt(errorMessage, "error"); // Mostramos un toast de error
+            }
+        } catch (error) {
+            // Si hay un error de red o de JavaScript
+            console.error("Error al enviar la solicitud de eliminación:",error);
+            toastIt("Error de conexión al eliminar: " + error.message,"error");
+        } finally {
+            // Volvemos a habilitar el botón y restauramos su texto
+            button.disabled = false;
+        }
+    }
+}
+
+async function editUser(button) {    
+    const userId = button.dataset.rowNumber;
+    const userName = button.dataset.rowName;
+    const userEmail = button.dataset.rowEmail;
+    const isChecked = (button.dataset.rowStatus == 1) ? 'checked' : '';
+
+    const { value: formValues } = await Swal.fire({
+        title: 'Ingresa los datos del usuario',
+        html:
+            // Campo Nombre
+            '<input id="swal-input-name" class="swal2-input border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm block mt-1 w-full" placeholder="Nombre" type="text" style="width: 80%;" value="'+userName+'">' +
+            
+            // 🚨 Campo Email agregado aquí
+            '<input id="swal-input-email" class="swal2-input border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm block mt-1 w-full" placeholder="Email" type="email" style="width: 80%;" value="'+userEmail+'">' + 
+            
+            '<div style="width: 80%; margin: 10px auto; text-align: left;">' +
+                '<input type="checkbox" id="swal-input-status" ' + isChecked + '>' +
+                '<label for="swal-input-status" style="margin-left: 10px;">Usuario Activo</label>' +
+            '</div>' +
+
+            // Campo Contraseña
+            '<input id="swal-input-password" class="swal2-input border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm block mt-1 w-full" placeholder="Contraseña" type="password" style="width: 80%;" value="">' +
+            
+            // Campo Confirmar Contraseña
+            '<input id="swal-input-confirm" class="swal2-input border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm block mt-1 w-full" placeholder="Confirmar Contraseña" type="password" style="width: 80%;" value="">',
+
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: 'Aceptar',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: "#3085d6",
+        cancelButtonColor: "#d33",
+
+        // Validación y obtención de valores
+        preConfirm: () => {
+            const name = document.getElementById('swal-input-name').value;
+            const email = document.getElementById('swal-input-email').value;
+            const password = document.getElementById('swal-input-password').value;
+            const confirm = document.getElementById('swal-input-confirm').value;
+            const statusCheckbox = document.getElementById('swal-input-status');
+
+            // Simple función de validación de Email (puedes hacerla más robusta)
+            const isValidEmail = (email) => {
+                const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                return re.test(String(email).toLowerCase());
+            }
+
+            // 1. Validar campos vacíos
+            if (!name || !email) {
+                Swal.showValidationMessage('¡Todos los campos son obligatorios!');
+                return false;
+            }
+            
+            // 2. Validar formato de Email
+            if (!isValidEmail(email)) {
+                Swal.showValidationMessage('¡El formato del Email no es válido!');
+                return false;
+            }
+            
+            // 3. Validar que las contraseñas coincidan
+            if (password !== confirm) {
+                Swal.showValidationMessage('Las contraseñas no coinciden.');
+                return false;
+            }
+            
+            // Si pasa la validación, devuelve un objeto con todos los valores
+            return { 
+                name: name,
+                email: email, // 👈 Devolvemos el Email
+                password: password,
+                password_confirmation: confirm,
+                status: (statusCheckbox.checked) ? 1 : 0
+            };
+        }
+    });
+
+    if (formValues) {
+        button.disabled = true; // Deshabilitamos el botón para evitar múltiples clics
+        try {
+            const response = await fetch("/profile", {
+                method: "PATCH",
+                headers: {
+                    "X-CSRF-TOKEN": document
+                        .querySelector('meta[name="csrf-token"]')
+                        .getAttribute("content"), // Obtenemos el token CSRF
+                    Accept: "application/json",
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ id: userId, name: formValues.name, email: formValues.email, password: formValues.password, password_confirmation: formValues.password_confirmation, user_status: formValues.status }), // Enviamos el número de fila
+            });
+
+            const result = await response.json(); // Parseamos la respuesta JSON
+            if (response.ok) {
+                const data = result.data;
+                toastIt(result.message, "success");
+                var rowElement = document.getElementById(`row-user-${data.id}`);                
+                rowElement.cells[0] = data.name;
+                rowElement.cells[1] = data.email;
+                if(data.user_status == 1){
+                    rowElement.className = ''
+                    rowElement.cells[2].innerHTML = 'Activo';
+                    rowElement.cells[3].innerHTML = `
+                        <button class="delete-user-record bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded text-xs"
+                                data-row-number="${data.id}" onclick="deactivateUser(this)">
+                            &#10006;
+                        </button>
+                        <button class="edit-user-record bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded text-xs"
+                                data-row-number="${data.id}" data-row-name="${data.name}" data-row-email="${data.email}" data-row-status="${data.user_status}" onclick="editUser(this)">
+                            &#9999;
+                        </button>
+                    `;
+                }else{
+                    rowElement.className = 'bg-gray-700 text-white'
+                    rowElement.cells[2].innerHTML = 'Inactivo';
+                    rowElement.cells[3].innerHTML = `
+                        <button class="edit-user-record bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-2 rounded text-xs"
+                                data-row-number="${data.id}" data-row-name="${data.name}" data-row-email="${data.email}" data-row-status="${data.user_status}" onclick="editUser(this)">
+                            &#9999;
+                        </button>
+                    `;
+                }
+            } else {
+                let errorMessage = result.message || "Error al eliminar el registro.";
+                toastIt(errorMessage, "error"); // Mostramos un toast de error
+            }
+        } catch (error) {
+            // Si hay un error de red o de JavaScript
+            console.error("Error al enviar la solicitud de eliminación:",error);
+            toastIt("Error de conexión al eliminar: " + error.message,"error");
+        } finally {
+            // Volvemos a habilitar el botón y restauramos su texto
+            button.disabled = false;
+        }
+    }
+}
+
+var initializeUserFilter = function () {
+    const form = document.getElementById("user-filter-form");
+    if (!form) return;
+
+    const formContainer = document.getElementById("form-userList-container");
+
+    // Clonar para evitar listeners duplicados
+    const oldForm = form.cloneNode(true);
+    form.parentNode.replaceChild(oldForm, form);
+    const newForm = oldForm;
+
+    newForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        const formData = new FormData(newForm);
+        const params = new URLSearchParams(formData);
+        const formUrl = `${newForm.action}?${params.toString()}`;
+
+        formContainer.innerHTML = '<p class="text-center text-dark-navy">Cargando registros...</p>';
+
+        try {
+            const response = await fetch(formUrl, {
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                    Accept: "text/html",
+                },
+            });
+            const htmlContent = await response.text();
+            formContainer.innerHTML = htmlContent;
+            initializeUserFilter();
+        } catch (error) {
+            console.error("Error al filtrar registros:", error);
+            toastIt("Error al cargar los registros: " + error.message, "error");
+        }
+    });
+};

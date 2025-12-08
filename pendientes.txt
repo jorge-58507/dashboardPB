@@ -1,14 +1,14 @@
 
+-Que sucede si un registro existe en el excel pero no en la BD, como hacer esas verificaciones? no puede haber reistros en la tabla que no esten en l bd, y todos los registros de la bd deben estar en la tabla.
 
--Que sucede si un registro existe en el excel pero no en la BD y lo agregan a la BD
--para los usuarios de gas, poder modificar el precio del gas desde la modificacion de su perfil
--en el modelo user agregar as relaciones uno a muchos
-
-
-
-
-
+*filtrar usuarios
+*mecanismo que notifique al administrador cuando falten datos 
+*modificar cuentas desde cuenta de administrador
+*Que sucede si un registro existe en el excel pero no en la BD y lo agregan a la BD-Se actualiza la tabla con los datos de la bd
+*para los usuarios de gas, poder modificar el precio del gas desde la modificacion de su perfil
 *Crear rol del auditor para el registro de los ingresos por a&b y Otros
 *Si la fecha de un registro coincide pero el usuario no, preguntar si desea sobrescribirlo
 *Filtros por fecha para mostrar registros, al mostrar el formulario mostrar 2 campos de fechas
 *Poder sincronizar la tabla con la BD
+*en el modelo user agregar as relaciones uno a muchos
+
