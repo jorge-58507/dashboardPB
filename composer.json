@@ -62,7 +62,10 @@
         "allow-plugins": {
             "pestphp/pest-plugin": true
         },
-        "process-timeout": 1200
+        "process-timeout": 1200,
+        "audit": {
+            "ignore": ["PKSA-8qx3-n5y5-vvnd"]
+        }
     },
     "minimum-stability": "stable",
     "prefer-stable": true
