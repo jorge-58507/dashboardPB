@@ -10,7 +10,7 @@ use Illuminate\Support\Carbon; // Necesario para manejar fechas secuenciales
 /**
  * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\dpb_sale>
  */
-class DpbSaleFactory extends Factory
+class dpb_saleFactory extends Factory
 {
     protected $model = dpb_sale::class;
 

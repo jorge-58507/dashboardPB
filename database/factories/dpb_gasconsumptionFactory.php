@@ -7,7 +7,7 @@ use App\Models\dpb_gasconsumption;
 use Illuminate\Database\Eloquent\Factories\Sequence;
 use Illuminate\Support\Carbon;
 
-class DpbGasconsumptionFactory extends Factory
+class dpb_gasconsumptionFactory extends Factory
 {
     /**
      * El modelo correspondiente al Factory.
