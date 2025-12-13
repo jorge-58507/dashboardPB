@@ -25,7 +25,7 @@ class dpb_incomeFactory extends Factory
             // Los campos de fecha e ingresos serán sobrescritos por sequentialDates()
             'income_date' => null, // Placeholder
             'income_ab' => 0,      // Placeholder
-            'income_another' => 0, // Placeholder
+            'income_other' => 0, // Placeholder
             
             // Campos de valores fijos
             'income_userid' => 1,
@@ -67,7 +67,7 @@ class dpb_incomeFactory extends Factory
             return [
                 'income_date' => $date->format('Y-m-d'),
                 'income_ab' => $ab_income,
-                'income_another' => $other_income,
+                'income_other' => $other_income,
             ];
         });
     }

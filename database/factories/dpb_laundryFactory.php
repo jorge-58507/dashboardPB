@@ -23,7 +23,6 @@ class dpb_laundryFactory extends Factory
     {
         return [
             // Los campos de fecha se establecerán en la secuencia
-            'laundry_date' => null, // Fecha de registro (puede ser la misma que Init)
             'laundry_dateInit' => null, 
             'laundry_dateFinish' => null, 
             
@@ -71,7 +70,6 @@ class dpb_laundryFactory extends Factory
             $totalCost = $cycles * $costPerCycle + $this->faker->randomFloat(2, -10, 10); // Variación de +/- 10
 
             return [
-                'laundry_date' => $endRange->format('Y-m-d'), // Usamos la fecha de fin como fecha de registro
                 'laundry_dateInit' => $startRange->format('Y-m-d'),
                 'laundry_dateFinish' => $endRange->format('Y-m-d'),
                 
