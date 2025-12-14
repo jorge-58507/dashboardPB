@@ -869,56 +869,6 @@ class FormController extends Controller
             return response()->json(['status' => 'fail', 'message' => $ans['message']], $ans['HTTPcode']);
         }
     }
-    // public function showSalesRecords(Request $request)
-    // {
-    //     $filterDate = $request->input('filter_date', Carbon::now()->format('Y-m-d'));
-    //     $year = Carbon::parse($filterDate)->year;
-    //     $month = Carbon::parse($filterDate)->month;
-
-    //     $query = dpb_sale::query();
-
-    //     if ($request->has('filter_date') && $request->input('filter_date')) {
-    //         $query->whereYear('sale_date', $year)
-    //               ->whereMonth('sale_date', $month);
-    //     } else {
-    //         $query->whereYear('sale_date', Carbon::now()->year)
-    //               ->whereMonth('sale_date', Carbon::now()->month);
-    //     }
-
-    //     $currentUser = Auth::user();
-    //     $currentUserId = $currentUser->id;
-    //     $isAdmin = $currentUser->hasRole('Admin'); // Usando el método hasRole de Spatie/Laravel-Permission
-
-    //     try {
-    //         if ($isAdmin) {
-    //             $records = $query->ORDERBY('sale_status', 'DESC')->ORDERBY('sale_date', 'DESC')
-    //                 ->JOIN('users', 'users.id', 'dpb_sales.sale_userid')->GET();
-    //         } else {
-    //             $records = $query->ORDERBY('sale_status', 'DESC')->ORDERBY('sale_date', 'DESC')
-    //             ->where('dpb_sales.sale_userid',$currentUserId)
-    //             ->JOIN('users', 'users.id', 'dpb_sales.sale_userid')->GET();
-
-    //         }
-            
-    //         $displayHeaders = [
-    //             'sale_date' => 'Fecha',
-    //             'name' => 'Usuario',
-    //             'sale_corporative' => 'Corporativo',
-    //             'sale_national' => 'Ag. Nacional',
-    //             'sale_international' => 'Ag. Internacional',
-    //             'sale_callcenter' => 'Callcenter',
-    //             'sale_ota' => 'OTAs',
-    //             'sale_arenas' => 'Arenas',
-    //             'sale_web' => 'Pag. Web',
-    //             'sale_status' => 'Estado'
-    //         ];
-    //         return view('forms.sales_records', compact('displayHeaders', 'records'));
-    //     } catch (\Exception $e) {
-    //         Log::error('Error al cargar registros: ' . $e->getMessage());
-    //         return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
-    //     }
-    // }
-
     public function showSalesRecords(Request $request)
     {
         // 1. DETERMINACIÓN DEL PERÍODO Y FECHAS LÍMITE
@@ -966,7 +916,7 @@ class FormController extends Controller
                         AND DATE('$startDate') + INTERVAL (a.N + b.N*10) DAY < '$hoy'
                 ) AS dias_del_mes
             LEFT JOIN
-                dpb_saleS AS registros
+                dpb_sales AS registros
             ON
                 dias_del_mes.fecha_completa = DATE(registros.sale_date)
                 AND registros.sale_status = 1 
@@ -1061,9 +1011,6 @@ class FormController extends Controller
             return response()->json(['message' => 'Error al cargar registros: ' . $e->getMessage()], 500);
         }
     }
-
-
-
     public function deleteSales(Request $request)
     {
         $validator = Validator::make($request->all(), [
