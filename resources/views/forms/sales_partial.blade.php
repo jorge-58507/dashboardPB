@@ -44,14 +44,14 @@
         </div>
 
         <div class="form-group">
-            <label for="montoAgenciaNac">Venta Agencia Nac:</label>
+            <label for="montoAgenciaNac">Venta Ag. Nacional:</label>
             <input type="text" id="montoAgenciaNac" name="montoAgenciaNac" value="{{ old('montoAgenciaNac') }}" step="0.04" required
                    class="shadow appearance-none border border-light-gray rounded w-full py-2 px-3 text-dark-navy leading-tight focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-accent-blue">
             <p id="error-montoAgenciaNac" class="validation-error hidden"></p>
         </div>
 
         <div class="form-group">
-            <label for="montoAgenciaInt">Venta Internacional:</label>
+            <label for="montoAgenciaInt">Venta Ag. Internacional:</label>
             <input type="text" id="montoAgenciaInt" name="montoAgenciaInt" value="{{ old('montoAgenciaInt') }}" step="0.05" required
                    class="shadow appearance-none border border-light-gray rounded w-full py-2 px-3 text-dark-navy leading-tight focus:outline-none focus:ring-2 focus:ring-accent-blue focus:border-accent-blue">
             <p id="error-montoAgenciaInt" class="validation-error hidden"></p>
