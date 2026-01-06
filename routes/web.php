@@ -31,7 +31,7 @@ Route::middleware('auth')->group(function () {
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     Route::get('/userList-filter', [formController::class, 'filterUser']);
-    
+    Route::GET('check-newsale', [FormController::class, 'checkNewSale'])->middleware(['role:Admin|Ventas']);
 
     // --- GRUPO DE RUTAS PARA TODOS LOS FORMULARIOS ---
     Route::prefix('formulario')->name('formulario.')->group(function () {

@@ -32,7 +32,8 @@ class FormController extends Controller
         'sale' => 'h',
         'phonecall' => 'j',
         'laundry' => 'g',
-        'inventoryhk'=> 'k'
+        'inventoryhk'=> 'k',
+        'newSale' => 'l'
     ];
     public function fillTable($sheetName, $rowData, $databaseId)
     {
@@ -219,7 +220,16 @@ class FormController extends Controller
         $sheetName = $this->sheet['sale'];
         $rs_sale = dpb_sale::WHERE('sale_date', $sale_date)->WHERE('sale_status',1)->first();
         $rs_income = dpb_income::WHERE('income_date', $sale_date)->WHERE('income_status',1)->first();
-        $userId = Auth::id();
+        $userId = 3;
+        if(!empty($rs_sale['sale_userid'])) {
+            $userId = $rs_sale['sale_userid'];
+         }else{
+            if(!empty($rs_sale['income_userid'])) {
+                $userId = $rs_sale['income_userid'];
+            }else{    
+                $userId = Auth::id();
+            }
+         } 
 
         $min = 15;
         $max = 9999;
@@ -396,6 +406,154 @@ class FormController extends Controller
             }
         } catch (\Exception $e) {
             return ['message' => 'Error en el servidor al comunicarse con Google Sheets.', 'HTTPcode' => 500];
+        }
+    }
+    public function removeCheckedNewSale($rowNumber){
+        //ELIMINAR LA FILA
+        $targetSheetId = null;
+        $client = new Client();
+        $client->setAuthConfig(config('google.service_account_credentials_path'));
+        $client->addScope(Sheets::SPREADSHEETS);
+        $service = new Sheets($client);
+        $spreadsheetId = config('google.sheet_id');
+        $sheetName = $this->sheet['newSale'];
+
+
+        $spreadsheet = $service->spreadsheets->get($spreadsheetId);
+        foreach ($spreadsheet->getSheets() as $sheet) {
+            if ($sheet->getProperties()->getTitle() === $sheetName) {
+                $targetSheetId = $sheet->getProperties()->getSheetId();
+                break;
+            }
+        }
+
+        if ($targetSheetId === null) {
+            throw new \Exception("La hoja '{$sheetName}' no fue encontrada en el Spreadsheet para eliminación.");
+        }
+
+        $deleteRequest = new DeleteDimensionRequest([
+            'range' => [
+                'sheetId' => $targetSheetId,
+                'dimension' => 'ROWS',
+                'startIndex' => $rowNumber-1,
+                'endIndex' => $rowNumber
+            ]
+        ]);
+
+        $batchUpdateRequest = new BatchUpdateSpreadsheetRequest([
+            'requests' => [
+                new SheetRequest([ // Usar el nombre de clase completo
+                    'deleteDimension' => $deleteRequest
+                ])
+            ]
+        ]);
+        $result = $service->spreadsheets->batchUpdate($spreadsheetId, $batchUpdateRequest);
+        if ($result->getReplies() && count($result->getReplies()) > 0) {
+            return ['message' => 'Registro eliminado exitosamente.', 'HTTPcode' => 200];
+        } else {
+            return ['message' => 'Hubo un problema al eliminar el registro.', 'HTTPcode' => 500];
+        }
+
+    }
+    public function checkNewSale(){
+        $client = new Client();
+        $client->setAuthConfig(config('google.service_account_credentials_path'));
+        $client->addScope(Sheets::SPREADSHEETS);
+        $service = new Sheets($client);
+        $spreadsheetId = config('google.sheet_id');
+        $sheetName = $this->sheet['newSale'];
+
+        // 1. Cambiamos el rango para leer desde la columna A hasta la Y
+        $readRange = $sheetName . '!A:X'; 
+        $response = $service->spreadsheets_values->get($spreadsheetId, $readRange);
+        $existingRows = $response->getValues();
+
+        $newRowData = null; // Variable para guardar toda la línea
+        if ($existingRows) {
+            $dataRows = array_slice($existingRows, 1); // Quitar encabezado
+            
+            foreach ($dataRows as $index => $row) {
+                $existingTableId = $row[23] ?? null; 
+
+                if ($existingTableId == 0) {
+                    $rowNumber = $index + 2;
+                    $newRowData = $row; // 3. Guardamos TODO el contenido de la fila encontrada
+                    break;
+                }
+            }
+        }
+
+        if (empty($newRowData)) { 
+            return [
+                'status' => 'success',
+                'message' => 'No hay registros nuevos.', 
+                'HTTPcode' => 200
+            ];
+        } else {
+            $dataForRequest = [
+                'fechaRegistro'    => $newRowData[21],
+                'montoWeb'         => $newRowData[19],
+                'montoCallcenter'  => $newRowData[8],
+                'montoOTA'         => $newRowData[10],
+                'montoCorporativo' => $newRowData[1],
+                'montoAgenciaNac'  => $newRowData[3],
+                'montoAgenciaInt'  => $newRowData[12],
+                'montoArenas'      => $newRowData[13],
+                'userId'           => 3,
+            ];
+
+            // 2. Creamos un objeto Request manualmente
+            $fakeRequest = new \Illuminate\Http\Request();
+            $fakeRequest->replace($dataForRequest); // Inyectamos los datos
+
+            // 3. Llamamos a la función submitSales
+            $salesResponse = $this->submitSales($fakeRequest);
+
+            // 4. Procesamos la respuesta (como submitSales devuelve un JsonResponse, obtenemos el contenido)
+            $result = json_decode($salesResponse->getContent(), true);
+
+            switch ($result['status']) {
+                case 'success':
+                    $removeResponse = $this->removeCheckedNewSale($rowNumber);
+                    // Aquí podrías actualizar la columna X en Google Sheets para poner el ID de la BD
+                    // y que no se vuelva a procesar.
+                    return [
+                        'status' => 'success',
+                        'message' => 'Procesado desde Sheets: ' . $result['message'],
+                        'HTTPcode' => 200
+                    ];
+
+                    break;
+                case 'confirm':
+                    $dataForRequest['databaseId'] = $result['data']['databaseId'];
+                    $fakeRequest->replace($dataForRequest); // Inyectamos los datos
+                    $updResponse = $this->updateSales($fakeRequest);
+                    $removeResponse = $this->removeCheckedNewSale($rowNumber);
+                    return [
+                        'status' => 'success',
+                        'message' => 'El registro fue actualizado.',
+                        'HTTPcode' => 200
+                    ];
+                    break;
+                default:
+                    $updateRange = $sheetName . '!A' . $rowNumber . ':X' . $rowNumber;
+                    $newRowData[23] = 1;
+                    $body = new ValueRange([
+                        'values' => [$newRowData] // La API espera un array de filas
+                    ]);
+                    $params = [
+                        'valueInputOption' => 'USER_ENTERED'
+                    ];
+                    $service->spreadsheets_values->update($spreadsheetId, $updateRange, $body, $params);
+
+                    return [
+                        'status' => 'fail',
+                        'message' => 'Error al procesar fila: ' . ($result['message'] ?? 'Error desconocido'),
+                        'errors' => $result['errors'] ?? null,
+                        'HTTPcode' => $salesResponse->getStatusCode()
+                    ];
+                    break;
+            }
         }
     }
 
@@ -727,7 +885,7 @@ class FormController extends Controller
                 'errors' => $validator->errors()
             ], 422);
         }
-        $userId = Auth::id(); // ID del usuario autenticado
+        $userId = (!empty($request->input('userId'))) ? $request->input('userId') : Auth::id(); // ID del usuario autenticado
         $validatedData = $validator->validated(); // Obtener los datos validados
 
         $qry_date = dpb_sale::where('sale_date', $validatedData['fechaRegistro']);
@@ -759,7 +917,7 @@ class FormController extends Controller
     }
     public function updateSales(Request $request)
     {
-        $userId = Auth::id();
+        $userId = (!empty($request->input('userId'))) ? $request->input('userId') : Auth::id(); // ID del usuario autenticado
         $validator = Validator::make($request->all(), [
             'montoWeb' => ['required', 'numeric', 'min:0'],
             'montoCallcenter' => ['required', 'numeric', 'min:0'],
@@ -825,43 +983,6 @@ class FormController extends Controller
         $m_sale->save();
 
         $ans = $this->fillTableSale($validatedData['fechaRegistro']);
-
-
-
-
-
-        /*
-        // Prepara la fila con los datos actualizados para Google Sheets
-        $min = 15;
-        $max = 9999;
-        $rs_data = dpb_sale::WHERE('sale_date', $validatedData['fechaRegistro'])->JOIN('dpb_incomes', 'dpb_incomes.income_date', "=", 'dpb_sales.sale_date')->first();
-        $rowData = [
-            mt_rand($min, $max),
-            $m_sale->sale_corporative,
-            mt_rand($min, $max),
-            $m_sale->sale_national,
-            mt_rand($min, $max),
-            !empty($rs_data['income_other']) ? $rs_data['income_other'] : 0,
-            $userId,
-            !empty($rs_data['income_ab']) ? $rs_data['income_ab'] : 0,
-            $m_sale->sale_callcenter,
-            mt_rand($min, $max),
-            $m_sale->sale_ota,
-            mt_rand($min, $max),
-            $m_sale->sale_international,
-            $m_sale->sale_arenas,
-            mt_rand($min, $max),
-            mt_rand($min, $max),
-            $m_sale->created_at,
-            mt_rand($min, $max),
-            mt_rand($min, $max),
-            $m_sale->sale_web,
-            mt_rand($min, $max),
-            $request->input('fechaRegistro'),
-            !empty($rs_data['income_id']) ? $rs_data['income_id'] : 0,
-            $m_sale->sale_id
-        ];
-        $ans = $this->fillTableSale($rowData, $request->input('fechaRegistro'));*/
 
         if ($ans['status'] === 'success') {
             return response()->json(['status' => 'success', 'message' => $ans['message']], $ans['HTTPcode']);

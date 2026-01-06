@@ -1,4 +1,4 @@
-
+Gerson, Auditor, Samuel, Rita, Karla, Inventarios HK
 -Que sucede si un registro existe en el excel pero no en la BD, como hacer esas verificaciones? no puede haber reistros en la tabla que no esten en l bd, y todos los registros de la bd deben estar en la tabla.
 -En el formulario de gas poner un label que muestre el precio del gas
 
@@ -13,4 +13,6 @@
 *Filtros por fecha para mostrar registros, al mostrar el formulario mostrar 2 campos de fechas
 *Poder sincronizar la tabla con la BD
 *en el modelo user agregar as relaciones uno a muchos
+
+
 
